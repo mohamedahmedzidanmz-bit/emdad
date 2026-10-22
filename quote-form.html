@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}</style></head><body>
+<title>نموذج عرض سعر</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Readex+Pro:wght@500;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Layout: one centered request sheet; the factory's request on top, the supplier's reply form below, then a send step. */
+:root{
+  --bg:#EDF0EE; --surface:#FFFFFF; --sunk:#F5F7F6; --ink:#15201C; --muted:#5A6762; --line:#D3DBD7;
+  --accent:#2343C8; --accent-ink:#FFFFFF; --accent-soft:#E6EBFB;
+  --ok:#1B7A48; --ok-soft:#E3F2E9; --warn:#A85F00; --warn-soft:#FCEFD9; --bad:#B42318; --bad-soft:#FBE6E3; --wa:#1F8F4E;
+  --f-display:"Readex Pro","IBM Plex Sans Arabic",Tahoma,sans-serif;
+  --f-body:"IBM Plex Sans Arabic",Tahoma,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+  --r:6px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0E1412; --surface:#151D1A; --sunk:#111816; --ink:#E3EAE6; --muted:#93A29C; --line:#26312D;
+  --accent:#8198FF; --accent-ink:#0E1412; --accent-soft:#1E2747;
+  --ok:#55C48C; --ok-soft:#143024; --warn:#F0A83A; --warn-soft:#33260F; --bad:#F27466; --bad-soft:#3A1915; --wa:#3DBB72; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0E1412; --surface:#151D1A; --sunk:#111816; --ink:#E3EAE6; --muted:#93A29C; --line:#26312D;
+  --accent:#8198FF; --accent-ink:#0E1412; --accent-soft:#1E2747;
+  --ok:#55C48C; --ok-soft:#143024; --warn:#F0A83A; --warn-soft:#33260F; --bad:#F27466; --bad-soft:#3A1915; --wa:#3DBB72; color-scheme:dark}
+[hidden]{display:none!important}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.6;padding-block:28px 56px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+button,input,textarea,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.sheet{max-width:640px;margin-inline:auto;display:flex;flex-direction:column;gap:18px}
+.top{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap}
+.top small{display:block;color:var(--muted);font-size:12.5px;letter-spacing:.02em}
+.top h1{margin:0;font-family:var(--f-display);font-weight:600;font-size:24px;text-wrap:balance}
+.code{font-family:var(--f-mono);font-size:12.5px;direction:ltr;unicode-bidi:isolate}
+.req{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.req .item{padding:16px 18px;border-bottom:1px solid var(--line)}
+.req .item small{color:var(--muted);font-size:12.5px}
+.req .item b{display:block;font-family:var(--f-display);font-weight:600;font-size:19px}
+.kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:1px;background:var(--line)}
+.kv div{background:var(--surface);padding:10px 18px;display:flex;flex-direction:column}
+.kv small{color:var(--muted);font-size:12px}
+.kv b{font-weight:600;font-variant-numeric:tabular-nums}
+.kv div:last-child:nth-child(odd){grid-column:1/-1}
+.specs{padding:10px 18px;border-top:1px solid var(--line);background:var(--sunk);font-size:13px;color:var(--muted)}
+.banner{border-radius:var(--r);padding:10px 14px;font-size:14px}
+.banner.warn{background:var(--warn-soft);color:var(--warn)}
+form{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:18px;display:flex;flex-direction:column;gap:16px}
+h2{margin:0;font-family:var(--f-display);font-weight:600;font-size:17px}
+h3{margin:4px 0 0;font-family:var(--f-display);font-weight:600;font-size:14px;color:var(--muted)}
+.fg{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.f{display:flex;flex-direction:column;gap:4px;min-width:0}
+.f.full{grid-column:1/-1}
+.f>span{font-size:13px;color:var(--muted);font-weight:500}
+.f>span em{font-style:normal;color:var(--bad)}
+.f input,.f textarea,.f select{border:1px solid var(--line);background:var(--surface);border-radius:var(--r);padding:10px 12px;width:100%;min-width:0}
+.f input[aria-invalid="true"]{border-color:var(--bad)}
+.f textarea{min-height:76px;resize:vertical}
+.f small{font-size:12px;color:var(--muted)}
+.pricebox{display:grid;grid-template-columns:minmax(0,1fr) 110px;gap:8px}
+.choice{display:flex;gap:6px;flex-wrap:wrap}
+.choice label{flex:1 1 210px;display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:var(--r);padding:8px 12px;cursor:pointer;font-size:14px}
+.choice input{accent-color:var(--accent);margin:0}
+.choice label:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}
+.total{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;background:var(--accent-soft);border-radius:var(--r);padding:10px 14px;font-variant-numeric:tabular-nums}
+.total b{font-family:var(--f-display);font-size:20px;font-weight:600}
+.total small{display:block;color:var(--muted);font-size:12px}
+.btn{cursor:pointer;border:1px solid var(--line);background:var(--surface);padding:11px 18px;border-radius:var(--r);font-weight:600;text-decoration:none;display:inline-flex;justify-content:center;align-items:center;gap:8px}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.wa{background:var(--wa);border-color:var(--wa);color:#fff}
+.done{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:18px;display:flex;flex-direction:column;gap:14px}
+.done .ok{display:flex;gap:10px;align-items:center;color:var(--ok);font-weight:600}
+.done .ok i{width:26px;height:26px;border-radius:50%;background:var(--ok-soft);display:grid;place-items:center;font-style:normal}
+.steps{margin:0;padding-inline-start:20px;color:var(--muted);font-size:14px}
+.codebox{border:1px dashed var(--line);background:var(--sunk);border-radius:var(--r);padding:10px 12px;font-size:13px;white-space:pre-wrap;word-break:break-all;user-select:all;unicode-bidi:plaintext}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+.row .btn{flex:1 1 200px}
+.err{background:var(--bad-soft);color:var(--bad);border-radius:var(--r);padding:14px 16px;margin:0}
+.err b{display:block;font-family:var(--f-display);margin-bottom:4px}
+.foot{color:var(--muted);font-size:12.5px;text-align:center}
+@media (max-width:520px){.fg{grid-template-columns:1fr}.top h1{font-size:21px}}
+</style>
+
+<main class="sheet" id="root">
+  <div class="top"><div><small id="fromLbl"></small><h1 id="company">طلب عرض سعر</h1></div><span class="code" id="rfqNo"></span></div>
+  <div id="bad" class="err" hidden><b>اللينك ده ناقص أو اتغير</b>اتأكد إنك فتحت اللينك كامل زي ما وصلك. لو المشكلة فضلت، اطلب من المصنع يبعته تاني.</div>
+  <section class="req" id="req" hidden>
+    <div class="item"><small>الصنف المطلوب</small><b id="item"></b></div>
+    <div class="kv">
+      <div><small>الكمية المطلوبة</small><b id="qty"></b></div>
+      <div><small>مطلوب قبل</small><b id="need"></b></div>
+      <div><small>آخر ميعاد للرد</small><b id="due"></b></div>
+    </div>
+    <div class="specs">المواصفات الكاملة في رسالة الطلب اللي وصلتك على واتساب.</div>
+  </section>
+  <div id="late" class="banner warn" hidden>ميعاد الرد عدّى، بس تقدر تبعت عرضك برضه.</div>
+  <form id="form" hidden novalidate>
+    <h2>عرضك</h2>
+    <div class="fg">
+      <label class="f full"><span>اسم الشركة <em>*</em></span><input id="sup" name="sup" autocomplete="organization" maxlength="80"></label>
+      <label class="f"><span>اسم المسؤول</span><input id="cp" name="cp" autocomplete="name" maxlength="60"></label>
+      <label class="f"><span>رقم التليفون / واتساب</span><input id="ph" name="ph" type="tel" autocomplete="tel" dir="ltr" maxlength="20"></label>
+    </div>
+    <h3>السعر</h3>
+    <div class="fg">
+      <div class="f full"><span>سعر الوحدة <em>*</em> <small id="perUnit"></small></span>
+        <div class="pricebox"><input id="price" name="price" type="text" inputmode="decimal" autocomplete="off" dir="ltr" placeholder="0.00" aria-label="سعر الوحدة"><select id="cur" name="cur" aria-label="العملة"><option value="EGP">جنيه مصري</option><option value="USD">دولار</option><option value="EUR">يورو</option><option value="CNY">يوان</option></select></div>
+      </div>
+      <div class="f full"><span>ضريبة القيمة المضافة (14%)</span><div class="choice" role="radiogroup"><label><input type="radio" name="vat" value="exc" checked> السعر غير شامل الضريبة</label><label><input type="radio" name="vat" value="inc"> السعر شامل الضريبة</label></div></div>
+      <div class="f full"><span>النقل</span><div class="choice" role="radiogroup"><label><input type="radio" name="dlv" value="yes" checked> شامل التوصيل للمصنع</label><label><input type="radio" name="dlv" value="no"> تسليم في مخازننا</label></div></div>
+    </div>
+    <h3>التوريد</h3>
+    <div class="fg">
+      <label class="f"><span>الكمية اللي تقدر توردها</span><input id="qa" name="qa" type="text" inputmode="decimal" dir="ltr"><small id="qaHint"></small></label>
+      <label class="f"><span>مدة التوريد (يوم) <em>*</em></span><input id="lead" name="lead" type="text" inputmode="numeric" dir="ltr" placeholder="مثال: 7"></label>
+      <label class="f"><span>العرض سارٍ لحد</span><input id="valid" name="valid" type="date"></label>
+      <label class="f"><span>شروط الدفع</span><input id="terms" name="terms" maxlength="60" placeholder="مثال: 30 يوم من الاستلام"></label>
+      <label class="f full"><span>ملاحظات (اختياري)</span><textarea id="note" name="note" maxlength="300" placeholder="المنشأ، الماركة، التعبئة، أي بديل بتقترحه…"></textarea></label>
+    </div>
+    <div class="total"><div><span>إجمالي العرض</span><small id="totalSub"></small></div><b id="total">—</b></div>
+    <p id="formErr" class="err" role="alert" hidden></p>
+    <button class="btn pri" type="submit">جهّز العرض للإرسال</button>
+  </form>
+  <section class="done" id="done" hidden>
+    <div class="ok"><i>✓</i><span>عرضك جاهز. فاضل تبعته.</span></div>
+    <ol class="steps" id="howto"></ol>
+    <div class="row">
+      <a class="btn wa" id="waBtn" href="#" target="_blank" rel="noopener">ابعت العرض على واتساب</a>
+      <button class="btn" type="button" id="copyBtn">انسخ الرسالة</button>
+    </div>
+    <div class="codebox" id="msgBox"></div>
+    <button class="btn" type="button" id="editBtn">عدّل العرض</button>
+  </section>
+  <p class="foot">النموذج ده مش بيحفظ عرضك عندنا. العرض بيوصل للمصنع لما تبعت الرسالة بنفسك.</p>
+</main>
+
+<script>
+document.documentElement.dir='rtl';document.documentElement.lang='ar';
+const $=s=>document.querySelector(s);
+const CUR={EGP:'ج.م',USD:'$',EUR:'€',CNY:'¥'};
+const num=n=>(Number(n)||0).toLocaleString('en-US',{maximumFractionDigits:2});
+// Arabic-Indic / Persian digits and separators -> ASCII number
+function toNum(s){s=String(s||'').trim().replace(/[٠-٩]/g,d=>d.charCodeAt(0)-1632).replace(/[۰-۹]/g,d=>d.charCodeAt(0)-1776).replace(/[٫]/g,'.').replace(/[٬,\s]/g,'');return s===''?NaN:Number(s)}
+const pad=n=>String(n).padStart(2,'0');
+const ymd=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const today=()=>ymd(new Date());
+function addDays(n){const d=new Date();d.setDate(d.getDate()+n);return ymd(d)}
+const unpackDate=s=>s&&s.length===6?`20${s.slice(0,2)}-${s.slice(2,4)}-${s.slice(4,6)}`:'';
+function b64e(o){const b=new TextEncoder().encode(JSON.stringify(o));let s='';b.forEach(x=>s+=String.fromCharCode(x));return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')}
+// Compact link payload (v2): single-byte Arabic (U+0600..U+067F -> 0x80..0xFF), fields joined by \x1f, base64url.
+function unpack(t){
+  t=t.replace(/-/g,'+').replace(/_/g,'/');while(t.length%4)t+='=';
+  const bin=atob(t);let s='';for(let i=0;i<bin.length;i++){const b=bin.charCodeAt(i);s+=b<128?String.fromCharCode(b):String.fromCharCode(0x0600+b-128)}
+  const f=s.split('\x1f');if(f[0]!=='2'||f.length<10)return null;
+  return{r:f[1],s:f[2],q:+f[3]||0,u:f[4],d:unpackDate(f[5]),due:unpackDate(f[6]),w:f[7]?parseInt(f[7],36).toString():'',c:f[8],i:f[9],no:'RFQ-'+f[1]};
+}
+let R=null,msg='',draftKey='';
+function show(on){['#req','#form'].forEach(s=>$(s).hidden=!on);$('#bad').hidden=on}
+function load(){
+  R=null;$('#done').hidden=true;
+  let h='';try{h=location.hash.slice(1)}catch(e){}
+  try{if(h.startsWith('q'))R=unpack(h.slice(1))}catch(e){R=null}
+  if(!R||!R.r||!R.i){$('#company').textContent='طلب عرض سعر';$('#fromLbl').textContent='';$('#rfqNo').textContent='';$('#late').hidden=true;show(false);return}
+  $('#company').textContent=R.c||'طلب عرض سعر';
+  $('#fromLbl').textContent=R.c?'طلب عرض سعر من':'';
+  $('#rfqNo').textContent=R.no;
+  $('#item').textContent=R.i;
+  $('#qty').textContent=`${num(R.q)} ${R.u||''}`;
+  $('#need').textContent=R.d||'—';
+  $('#due').textContent=R.due||'في أقرب وقت';
+  $('#late').hidden=!(R.due&&R.due<today());
+  $('#perUnit').textContent=R.u?`(لكل ${R.u})`:'';
+  $('#qaHint').textContent=`سيبها زي ما هي لو هتورد الكمية كلها`;
+  const f=$('#form');f.reset();f.qa.value=R.q;f.valid.value=addDays(30);
+  document.title=`عرض سعر ${R.no}`;
+  draftKey='emdad-draft-'+R.r+'-'+(R.s||'x');
+  try{const d=JSON.parse(localStorage.getItem(draftKey)||'null');if(d)Object.entries(d).forEach(([k,v])=>{const el=f.elements[k];if(!el)return;if(el instanceof RadioNodeList){el.value=v}else el.value=v})}catch(e){}
+  show(true);upd();
+}
+function saveDraft(){if(!draftKey)return;try{const f=$('#form'),o={};['sup','cp','ph','price','cur','vat','dlv','qa','lead','valid','terms','note'].forEach(k=>o[k]=f.elements[k].value);localStorage.setItem(draftKey,JSON.stringify(o))}catch(e){}}
+function upd(){
+  const f=$('#form'),p=toNum(f.price.value),qa=toNum(f.qa.value),q=isNaN(qa)||qa<=0?R.q:qa,c=CUR[f.cur.value];
+  $('#total').textContent=p>0?`${num(p*q)} ${c}`:'—';
+  $('#totalSub').textContent=p>0?`${num(q)} ${R.u||''} × ${num(p)} ${c} · ${f.vat.value==='inc'?'شامل الضريبة':'غير شامل الضريبة'}`:'';
+}
+const form=$('#form');
+form.addEventListener('input',()=>{upd();saveDraft();form.querySelectorAll('[aria-invalid]').forEach(x=>x.removeAttribute('aria-invalid'))});
+form.addEventListener('change',()=>{upd();saveDraft()});
+form.addEventListener('submit',e=>{
+  e.preventDefault();
+  const f=e.target,errs=[],bad=[];
+  const price=toNum(f.price.value),lead=toNum(f.lead.value),qa=toNum(f.qa.value);
+  if(!f.sup.value.trim()){errs.push('اكتب اسم الشركة');bad.push(f.sup)}
+  if(!(price>0)){errs.push('سعر الوحدة لازم يكون رقم أكبر من صفر');bad.push(f.price)}
+  if(isNaN(lead)||lead<0||!Number.isInteger(lead)){errs.push('مدة التوريد لازم تكون عدد أيام صحيح');bad.push(f.lead)}
+  if(f.qa.value.trim()&&!(qa>0)){errs.push('الكمية اللي تقدر توردها لازم تكون رقم');bad.push(f.qa)}
+  if(f.valid.value&&f.valid.value<today()){errs.push('تاريخ صلاحية العرض فات');bad.push(f.valid)}
+  if(errs.length){$('#formErr').textContent=errs.join('، ')+'.';$('#formErr').hidden=false;bad.forEach(x=>x.setAttribute('aria-invalid','true'));bad[0].focus();return}
+  $('#formErr').hidden=true;
+  const qty=qa>0?qa:R.q;
+  const reply={v:2,r:R.r,s:R.s||'',n:f.sup.value.trim(),cp:f.cp.value.trim(),ph:f.ph.value.trim(),p:price,cur:f.cur.value,vat:f.vat.value,dlv:f.dlv.value,qa:qty,l:lead,vu:f.valid.value,t:f.terms.value.trim(),m:f.note.value.trim().slice(0,300)};
+  const c=CUR[reply.cur];
+  msg=[`عرض سعر على طلب ${R.no}`,`الصنف: ${R.i}`,`الشركة: ${reply.n}`,reply.cp?`المسؤول: ${reply.cp}`:'',reply.ph?`التليفون: ${reply.ph}`:'',
+    `سعر الوحدة: ${num(price)} ${c} (${reply.vat==='inc'?'شامل':'غير شامل'} الضريبة)`,
+    `الكمية: ${num(qty)} ${R.u||''}${qty<R.q?` من ${num(R.q)} مطلوبين`:''}`,
+    `الإجمالي: ${num(price*qty)} ${c}`,`مدة التوريد: ${lead} يوم · ${reply.dlv==='yes'?'شامل التوصيل للمصنع':'تسليم في مخازن المورد'}`,
+    reply.vu?`سارٍ لحد: ${reply.vu}`:'',reply.t?`الدفع: ${reply.t}`:'',reply.m?`ملاحظات: ${reply.m}`:''
+  ].filter(Boolean).concat(['',`كود العرض (متغيرش فيه):`,'EMDAD2.'+b64e(reply)]).join('\n');
+  $('#msgBox').textContent=msg;
+  const wa=String(R.w||'').replace(/\D/g,'');
+  $('#howto').innerHTML=(wa?['اضغط "ابعت العرض على واتساب".','واتساب هيفتح على رقم المصنع والرسالة مكتوبة. اضغط إرسال ومتعدلش في الكود.']:['اضغط "انسخ الرسالة".','ابعتها للمصنع على واتساب زي ما هي، ومتعدلش في الكود.']).map(s=>`<li>${s}</li>`).join('');
+  $('#waBtn').hidden=!wa;
+  $('#waBtn').href=`https://wa.me/${wa}?text=${encodeURIComponent(msg)}`;
+  form.hidden=true;$('#done').hidden=false;window.scrollTo(0,0);
+});
+$('#copyBtn').addEventListener('click',()=>{
+  const b=$('#copyBtn'),ok=()=>{b.textContent='اتنسخت';setTimeout(()=>b.textContent='انسخ الرسالة',2000)};
+  const fallback=()=>{const r=document.createRange();r.selectNodeContents($('#msgBox'));const s=getSelection();s.removeAllRanges();s.addRange(r);b.textContent='الرسالة متحددة، انسخها'};
+  try{navigator.clipboard.writeText(msg).then(ok,fallback)}catch(e){fallback()}
+});
+$('#editBtn').addEventListener('click',()=>{$('#done').hidden=true;form.hidden=false});
+window.addEventListener('hashchange',load);
+load();
+</script>
+
+</body></html>
