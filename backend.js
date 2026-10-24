@@ -123,6 +123,20 @@
     sb.auth.getSession().then(({ data }) => { if (data.session) { if (!session) signedIn(data.session); } else domReady.then(() => { if (!session) screen('login'); }); });
   }
 
+  /* ---------- install as an app (Android, desktop Chrome / Edge; iPhone uses Share → Add to Home Screen) ---------- */
+  let installEvt = null;
+  window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; domReady.then(addInstall); });
+  window.addEventListener('appinstalled', () => { installEvt = null; const b = document.querySelector('.lg-install'); if (b) b.remove(); });
+  function addInstall() {
+    const sys = document.querySelector('.o-sys');
+    if (!sys || !installEvt || sys.querySelector('.lg-install')) return;
+    const b = document.createElement('button');
+    b.className = 'lg-out lg-install'; b.title = 'ثبّت إمداد كتطبيق على الجهاز'; b.setAttribute('aria-label', b.title);
+    b.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 3h2v9.2l3.3-3.3 1.4 1.4L12 16l-5.7-5.7 1.4-1.4 3.3 3.3zM4 18h16v2H4z"/></svg>';
+    b.onclick = async () => { if (!installEvt) return; installEvt.prompt(); const r = await installEvt.userChoice; if (r.outcome === 'accepted') b.remove(); installEvt = null; };
+    sys.prepend(b);
+  }
+
   /* ---------- db: collection(col).doc(id).set/delete + onSnapshot ---------- */
   const subs = new Map(); // col → {map, cbs}
   let channel = null, wasDown = false;
