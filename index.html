@@ -794,7 +794,7 @@ function renderSuppliers(){
   const row=s=>{const st=supStats(s.id),[l,t]=SUP_ST[s.status]||SUP_ST.approved;return`<tr class="click" data-a="editSupplier" data-id="${s.id}"><td>${s.code?code(s.code):'—'}</td><td><b>${esc(s.name)}</b><span class="sub">${esc(s.contact||'')} ${s.phone?'· <span class="code">'+esc(s.phone)+'</span>':''}</span></td><td>${SUP_CAT[s.category]||'—'}</td><td>${esc(s.city||'—')}</td><td class="num">${num(s.leadDays)} يوم</td><td>${esc(s.terms||'—')}</td><td class="num">${pct(st.quality)}</td><td class="num">${pct(st.onTime)}</td><td>${gradeHtml(st.grade)}</td><td class="num">${money(st.spend)}</td><td>${chip(l,t)}</td></tr>`};
   const empty=S.suppliers.length?'مفيش نتايج للبحث ده.':'<b>مفيش موردين لسه</b>ابدأ بأهم مورد خامات عندك.';
   const noCode=S.suppliers.filter(s=>!s.code).length;
-  return head('الموردين',`${S.suppliers.length} مورد · ${S.suppliers.filter(s=>s.status==='approved').length} معتمد`,searchBox('كود أو اسم مورد')+`<button class="btn pri w" data-a="addSupplier">جديد</button>`)+
+  return head('الموردين',`${S.suppliers.length} مورد · ${S.suppliers.filter(s=>s.status==='approved').length} معتمد`,searchBox('كود أو اسم مورد')+`<button class="btn w" data-a="xlImportSup">استيراد من Excel</button><button class="btn" data-a="xlTemplate" data-k="suppliers">قالب Excel</button><button class="btn pri w" data-a="addSupplier">جديد</button>`)+
   (noCode?`<div class="note w"><span>${noCode} مورد من غير كود. البرنامج يقدر يدّيهم أكواد حسب الفئة (زي SUP-R-001).</span><button class="btn sm" data-a="autoCodeSup">كوّدهم تلقائي</button></div>`:'')+
   (vmode()==='kanban'?kgrid(list,supCard,empty):`<section class="panel">${gtbl(['الكود','المورد','الفئة','المدينة',['مدة التوريد','num'],'الدفع',['الجودة','num'],['المواعيد','num'],'التقييم',['حجم التعامل','num'],'الحالة'],list,row,empty,a=>money(sum(a,s=>supStats(s.id).spend)))}</section>`);
 }
@@ -1277,7 +1277,7 @@ function renderInv(){
   const list=S.items.filter(i=>ui.invType==='all'||(ui.invType==='low'?isLow(i):i.type===ui.invType)).filter(i=>match(i.sku,i.name,i.location)).sort((a,b)=>(a.sku||'').localeCompare(b.sku||''));
   const row=i=>{const[l,t]=stockState(i);const cap=Math.max(1,(+i.reorder||0)*2);const w=Math.min(100,(+i.onHand||0)/cap*100);const qq=quarantine(i.id),oo=onOrder(i.id);return`<tr><td>${code(i.sku)}</td><td><b>${esc(i.name)}</b><span class="sub">${ITEM_T[i.type]||''} · ${esc(i.location||'بدون موقع')}</span></td><td class="num" style="min-width:120px"><b>${num(i.onHand,2)}</b> ${esc(i.unit||'')}<div class="meter"><i class="${t==='ok'?'':t}" style="width:${w}%"></i></div></td><td class="num">${qq?num(qq,2):'—'}</td><td class="num">${oo?num(oo,2):'—'}</td><td class="num">${num(i.reorder)} / ${num(i.safety)}</td><td class="num">${money(i.cost)}</td><td class="num">${money(i.onHand*i.cost)}</td><td>${chip(l,t)}</td><td><span class="tags w"><button class="btn sm" data-a="issueNew" data-id="${i.id}">صرف</button><button class="btn sm" data-a="move" data-id="${i.id}">تسوية</button>${isLow(i)&&i.type!=='finished'?`<button class="btn sm" data-a="rfqFromItem" data-id="${i.id}">اطلب</button>`:''}<button class="btn sm" data-a="editItem" data-id="${i.id}">تعديل</button></span></td></tr>`};
   const empty=S.items.length?'مفيش أصناف بالفلتر ده.':'<b>مفيش أصناف</b>عرّف الخامات والمكونات والمنتج التام.';
-  return head('المنتجات والمخزون',`${S.items.length} صنف · قيمة ${money(sum(S.items,i=>i.onHand*i.cost))}`,tools+searchBox('كود، اسم، أو موقع')+`<button class="btn pri w" data-a="addItem">جديد</button>`)+
+  return head('المنتجات والمخزون',`${S.items.length} صنف · قيمة ${money(sum(S.items,i=>i.onHand*i.cost))}`,tools+searchBox('كود، اسم، أو موقع')+`<button class="btn w" data-a="xlImportItems">استيراد من Excel</button><button class="btn" data-a="xlTemplate" data-k="items">قالب Excel</button><button class="btn pri w" data-a="addItem">جديد</button>`)+
   `<div>${seg('invType',[['all','الكل'],['low','تحت حد الطلب'],...Object.entries(ITEM_T)])}</div>
   ${vmode()==='kanban'?kgrid(list,itemCard,empty):`<section class="panel">${gtbl(['الكود','الصنف',['الرصيد','num'],['تحت الفحص','num'],['في الطريق','num'],['حد الطلب / الأمان','num'],['التكلفة','num'],['القيمة','num'],'الحالة',''],list,row,empty,a=>money(sum(a,i=>i.onHand*i.cost)))}</section>`}`;
 }
@@ -1355,6 +1355,104 @@ function deptForm(id){
   </div>${formActions(id?'احفظ':'أضف القسم',id&&!iss.length?`<button type="button" class="btn danger w" data-a="del" data-col="depts" data-id="${id}">احذف</button>`:'')}</form>${id?histHtml(d0):''}`,
   async fd=>{const d=Object.fromEntries(fd);d.code=String(d.code||'').trim().toUpperCase();d.name=String(d.name||'').trim();if(codeTaken('depts','code',d.code,id)){toast(`الكود ${d.code} مستخدم لقسم تاني`,'bad');return false}if(codeTaken('depts','name',d.name,id)){toast(`فيه قسم اسمه ${d.name} بالفعل`,'bad');return false}await put('depts',id||genNo('DEP'),Object.assign({},id?strip(d0):{},d));toast(id?'اتحفظ القسم':'اتضاف القسم')},
   body=>{const f=body.querySelector('form.main');if(!id)autoCode(f.code,()=>nextDeptCode(f.kind.value,id),[f.kind])});
+}
+
+/* ---------- Excel templates & bulk import (suppliers, items) ---------- */
+// columns: [field, header in the sheet, how to fill it]; the import matches headers, so column order doesn't matter
+const XL={
+  suppliers:{title:'الموردين',one:'مورد',file:'قالب الموردين.xlsx',
+    cols:[['code','كود المورد','اختياري. لو سبته فاضي البرنامج هيدّيه كود حسب الفئة (SUP-R-001)'],['name','اسم المورد *','إجباري. لو الاسم أو الكود موجود قبل كده، بياناته هتتحدث بدل ما يتكرر'],['category','الفئة *',Object.values(SUP_CAT).join(' / ')],['status','الحالة',Object.values(SUP_ST).map(v=>v[0]).join(' / ')+' (لو فاضي: معتمد)'],['contact','مسؤول التواصل',''],['phone','التليفون',''],['email','الإيميل',''],['city','المدينة / البلد',''],['leadDays','مدة التوريد (يوم)','رقم'],['terms','شروط الدفع','مثلًا 30 يوم'],['notes','ملاحظات','']],
+    example:['','الشركة المتحدة للصاج','خامات','معتمد','م. هشام','01000000001','','العاشر من رمضان',12,'30 يوم','']},
+  items:{title:'الأصناف',one:'صنف',file:'قالب الأصناف.xlsx',
+    cols:[['sku','كود الصنف','اختياري. لو سبته فاضي هيتعمل من النوع والمجموعة (RM-01-0001)'],['name','اسم الصنف *','إجباري. لو الاسم أو الكود موجود قبل كده، بياناته هتتحدث'],['type','النوع *',Object.values(ITEM_T).join(' / ')],['grp','المجموعة','رقمين، مثلًا 01 صاج · 02 بلاستيك (لو فاضي: 01)'],['unit','الوحدة','كجم / طن / قطعة / متر / لتر / لفة / كرتونة'],['location','موقع التخزين','كود المخزن والرف، مثلًا WH01-A03-2'],['onHand','الرصيد الافتتاحي','رقم من الجرد الفعلي. بيتسجل للأصناف الجديدة بس'],['cost','تكلفة الوحدة (ج.م)','رقم'],['reorder','حد إعادة الطلب','رقم'],['safety','مخزون الأمان','رقم'],['prefSupplier','المورد المفضل','كود المورد أو اسمه زي ما هو متسجل']],
+    example:['','صاج مجلفن 0.8 مم','خامات','01','كجم','WH01-A01-1',1500,62,2500,1000,'SUP-R-001']}
+};
+const revMap=o=>{const r={};Object.entries(o).forEach(([k,v])=>{r[String(Array.isArray(v)?v[0]:v).trim()]=k;r[k]=k});return r};
+async function saveXlsx(X,wb,filename){
+  const buf=X.write(wb,{bookType:'xlsx',type:'array'});
+  if(downloadsNS){try{await downloadsNS.save({filename,data:buf});return true}catch(e){if(e&&e.code==='declined'){toast('اتلغى التنزيل');return false}}}
+  const url=URL.createObjectURL(new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));const a=document.createElement('a');a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),5000);return true;
+}
+async function downloadTemplate(k){
+  const X=await loadXLSX(),t=XL[k],wb=X.utils.book_new();wb.Workbook={Views:[{RTL:true}]};
+  const ws=X.utils.aoa_to_sheet([t.cols.map(c=>c[1])]);ws['!cols']=t.cols.map(c=>({wch:Math.max(14,c[1].length+6)}));X.utils.book_append_sheet(wb,ws,t.title);
+  const help=X.utils.aoa_to_sheet([['العمود','إزاي تملاه','مثال'],...t.cols.map((c,i)=>[c[1],c[2],t.example[i]??'']),[],['ملاحظة','املا البيانات في شيت «'+t.title+'» من الصف التاني. متغيّرش عناوين الأعمدة.','']]);help['!cols']=[{wch:22},{wch:70},{wch:24}];X.utils.book_append_sheet(wb,help,'تعليمات');
+  if(await saveXlsx(X,wb,t.file))toast('اتنزّل القالب. املاه وارجع دوس «استيراد من Excel»');
+}
+// reads the sheet rows into a plan: what will be created, updated, or skipped (with the reason)
+function buildImport(k,raw){
+  const t=XL[k];if(!raw.length)throw new Error('الملف فاضي');
+  const norm=s=>String(s??'').replace(/\*/g,'').replace(/\s+/g,' ').trim();
+  const idx={};raw[0].forEach((h,i)=>{const c=t.cols.find(c=>norm(c[1])===norm(h)||c[0]===norm(h));if(c&&idx[c[0]]==null)idx[c[0]]=i});
+  if(idx.name==null)throw new Error(`مش لاقي عمود «${norm(t.cols[1][1])}». استخدم القالب ومتغيّرش العناوين.`);
+  const catR=revMap(SUP_CAT),stR=revMap(Object.fromEntries(Object.entries(SUP_ST).map(([a,v])=>[a,v[0]]))),typR=revMap(ITEM_T);
+  const codes=(k==='suppliers'?S.suppliers.map(s=>s.code):S.items.map(i=>i.sku)).map(c=>String(c||'').toUpperCase()),seen=new Set(),out=[];
+  raw.slice(1).forEach((r,n)=>{
+    if(r.every(v=>String(v??'').trim()===''))return;
+    const g=f=>idx[f]==null?'':String(r[idx[f]]??'').trim();
+    const numv=f=>{const v=g(f);if(v==='')return null;const x=toNum(v);if(isNaN(x)){row.errors.push(`«${norm(t.cols.find(c=>c[0]===f)[1])}» مش رقم`);return null}return x};
+    const row={line:n+2,errors:[],data:{},target:null,warn:''},name=g('name');
+    if(!name)row.errors.push('الاسم فاضي');
+    if(k==='suppliers'){
+      const cat=catR[g('category')]||'';if(!cat)row.errors.push('الفئة مش معروفة');
+      const st=g('status')?stR[g('status')]:'approved';if(!st)row.errors.push('الحالة مش معروفة');
+      let cd=g('code').toUpperCase();const ex=(cd&&S.suppliers.find(s=>String(s.code||'').toUpperCase()===cd))||(name&&S.suppliers.find(s=>s.name.trim()===name));row.target=ex?ex.id:null;
+      if(!cd)cd=ex&&ex.code?ex.code:(cat?nextCode(codes,'SUP-'+(SUP_PFX[cat]||'O')+'-',3):'');
+      if(cd&&S.suppliers.some(s=>s.id!==(ex&&ex.id)&&String(s.code||'').toUpperCase()===cd))row.errors.push('الكود مستخدم لمورد تاني');
+      if(cd&&seen.has(cd))row.errors.push('الكود متكرر في الملف');
+      const lead=numv('leadDays');
+      row.data={code:cd,name,category:cat,status:st||'approved',contact:g('contact'),phone:g('phone'),email:g('email'),city:g('city'),leadDays:lead,terms:g('terms'),notes:g('notes')};
+    }else{
+      const type=typR[g('type')]||'';if(!type)row.errors.push('النوع مش معروف');
+      const grp=grp2(g('grp')||'01');
+      let cd=g('sku').toUpperCase();const ex=(cd&&S.items.find(i=>String(i.sku||'').toUpperCase()===cd))||(name&&S.items.find(i=>i.name.trim()===name));row.target=ex?ex.id:null;
+      if(!cd)cd=ex&&ex.sku?ex.sku:(type?nextCode(codes,(ITEM_PFX[type]||'IT')+'-'+grp+'-',4):'');
+      if(cd&&S.items.some(i=>i.id!==(ex&&ex.id)&&String(i.sku||'').toUpperCase()===cd))row.errors.push('الكود مستخدم لصنف تاني');
+      if(cd&&seen.has(cd))row.errors.push('الكود متكرر في الملف');
+      const ps=g('prefSupplier');let pref='';if(ps){const s=S.suppliers.find(s=>String(s.code||'').toUpperCase()===ps.toUpperCase()||s.name.trim()===ps);if(s)pref=s.id;else row.warn='المورد المفضل مش متسجل، هيتساب فاضي'}
+      row.onHand=numv('onHand');
+      row.data={sku:cd,name,type,grp,unit:g('unit'),location:g('location').toUpperCase(),cost:numv('cost'),reorder:numv('reorder'),safety:numv('safety'),prefSupplier:pref};
+      if(ex&&row.onHand)row.warn=(row.warn?row.warn+' · ':'')+'الصنف موجود: الرصيد مش هيتغير (استخدم تسوية جرد)';
+    }
+    const cd=k==='suppliers'?row.data.code:row.data.sku;if(cd){seen.add(cd);if(!row.errors.length)codes.push(cd)}
+    out.push(row);
+  });
+  return out;
+}
+function importPreview(k,plan){
+  const t=XL[k],isS=k==='suppliers',ok=plan.filter(r=>!r.errors.length),bad=plan.length-ok.length,upd=ok.filter(r=>r.target).length;
+  const rows=plan.map(r=>`<tr><td class="num">${r.line}</td><td>${code(isS?r.data.code:r.data.sku)}</td><td>${esc(r.data.name||'—')}</td><td>${isS?(SUP_CAT[r.data.category]||'—'):(ITEM_T[r.data.type]||'—')}</td>${isS?'':`<td class="num">${r.target||r.onHand==null?'—':num(r.onHand,2)}</td>`}<td>${r.errors.length?chip(r.errors.join('، '),'bad'):r.target?chip('تحديث','info'):chip('جديد','ok')}${r.warn?`<span class="sub">${esc(r.warn)}</span>`:''}</td></tr>`);
+  return`<div class="kv"><div><small>صفوف في الملف</small><b>${plan.length}</b></div><div><small>${t.one} جديد</small><b>${ok.length-upd}</b></div><div><small>تحديث لموجود</small><b>${upd}</b></div><div><small>فيها أخطاء</small><b>${bad}</b></div></div>
+  ${bad?'<div class="hint t-warn">الصفوف اللي فيها أخطاء مش هتتسجل. صلّحها في الملف واستورده تاني، والسليم مش هيتكرر لأنه بيتحدث بالكود أو الاسم.</div>':''}
+  <div class="panel">${tbl(['الصف','الكود','الاسم',isS?'الفئة':'النوع',...(isS?[]:[['رصيد افتتاحي','num']]),'النتيجة'],rows,'الملف مفيهوش بيانات تحت العناوين')}</div>
+  ${ok.length?`<div class="actions w"><span></span><button class="btn pri" data-go="1">سجّل ${ok.length} ${t.one}</button></div>`:''}`;
+}
+async function applyImport(k,plan){
+  const keep=o=>Object.fromEntries(Object.entries(o).filter(([,v])=>v!==''&&v!=null));let n=0;
+  for(const r of plan){if(r.errors.length)continue;
+    if(k==='suppliers'){const cur=r.target&&byId('suppliers',r.target);
+      if(cur)await put('suppliers',cur.id,Object.assign({},strip(cur),keep(r.data)),'تحديث من Excel');
+      else await put('suppliers',genNo('SUP'),Object.assign({leadDays:0},keep(r.data)),'إنشاء من Excel');
+    }else{const cur=r.target&&byId('items',r.target);
+      if(cur)await put('items',cur.id,Object.assign({},strip(cur),keep(r.data),{onHand:cur.onHand}),'تحديث من Excel');
+      else{const nid=genNo('IT'),oh=r.onHand||0;await put('items',nid,Object.assign({unit:'قطعة',cost:0,reorder:0,safety:0},keep(r.data),{onHand:oh}),'إنشاء من Excel');
+        if(oh)await put('movements',genNo('MV'),{itemId:nid,qty:oh,type:'open',ref:'Excel',note:'رصيد افتتاحي',date:today(),ts:Date.now()})}
+    }n++}
+  return n;
+}
+function importForm(k){
+  const t=XL[k];
+  openDrawer(`استيراد ${t.title} من Excel`,`<p style="margin:0;color:var(--muted)">اختار ملف Excel بنفس أعمدة القالب، وأول صف فيه عناوين الأعمدة. هتشوف معاينة لكل صف قبل ما أي حاجة تتحفظ.</p>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><input type="file" id="xlFile" accept=".xlsx,.xls,.csv" aria-label="ملف Excel"><button type="button" class="btn sm" data-a="xlTemplate" data-k="${k}">نزّل القالب الفاضي</button></div>
+  <div id="xlPrev" style="display:flex;flex-direction:column;gap:12px"></div>`,null,body=>{
+    body.querySelector('#xlFile').addEventListener('change',async e=>{
+      const f=e.target.files[0],pv=body.querySelector('#xlPrev');if(!f)return;pv.innerHTML='<div class="hint t-info">بنقرا الملف…</div>';
+      try{const X=await loadXLSX();const wb=X.read(await f.arrayBuffer(),{type:'array'});const ws=wb.Sheets[wb.SheetNames[0]];
+        const plan=buildImport(k,X.utils.sheet_to_json(ws,{header:1,defval:'',raw:true}));pv.innerHTML=importPreview(k,plan);
+        const go=pv.querySelector('[data-go]');if(go)go.onclick=()=>run(async()=>{go.disabled=true;go.textContent='بنسجّل…';const n=await applyImport(k,plan);toast(`اتسجل ${n} ${t.one} من Excel`);closeDrawer()});
+      }catch(err){pv.innerHTML=`<div class="hint t-bad">${esc(err.message||'الملف ده مش مقروء')}</div>`}
+    });
+  });
 }
 function moveForm(itemId){
   if(!S.items.length){toast('أضف صنف الأول','bad');return}
@@ -1587,6 +1685,8 @@ const ACT={
   close:()=>closeDrawer(),
   addSupplier:()=>supplierForm(),editSupplier:d=>supplierForm(d.id),
   autoCodeSup:(d,b)=>run(async()=>{b.disabled=true;let n=0;const list=S.suppliers.filter(s=>!s.code).sort((a,b)=>a.name.localeCompare(b.name,'ar'));for(const s of list){await patch('suppliers',s.id,{code:nextSupCode(s.category,s.id)},'كود تلقائي');n++}toast(`اتكوّد ${n} مورد`)}),
+  xlTemplate:(d,b)=>run(async()=>{const t=b.textContent;b.disabled=true;b.textContent='بنجهّز…';try{await downloadTemplate(d.k)}finally{b.disabled=false;b.textContent=t}}),
+  xlImportSup:()=>importForm('suppliers'),xlImportItems:()=>importForm('items'),
   addWh:()=>whForm(),editWh:d=>whForm(d.id),
   seedWh:(d,b)=>run(async()=>{b.disabled=true;for(const[c,n,t]of WH_SEED)if(!codeTaken('warehouses','code',c))await put('warehouses',genNo('WH'),{code:c,name:n,type:t,keeper:'',notes:'',active:'yes'});toast('اتضافت المخازن المقترحة. عدّل الأسامي براحتك')}),
   addDept:()=>deptForm(),editDept:d=>deptForm(d.id),
@@ -1632,7 +1732,7 @@ const ACT={
 };
 function arm(b,fn){if(b.dataset.armed){delete b.dataset.armed;fn();return}const t=b.textContent;b.dataset.armed='1';b.textContent='اضغط تاني للتأكيد';setTimeout(()=>{if(b.isConnected&&b.dataset.armed){delete b.dataset.armed;b.textContent=t}},3500)}
 // action -> module it belongs to; ':view' opens a record (read allowed if the module is visible)
-const ACT_MOD={addSupplier:'suppliers',editSupplier:'suppliers:view',autoCodeSup:'suppliers',addWh:'wh',editWh:'wh:view',seedWh:'wh',addDept:'dept',editDept:'dept:view',seedDept:'dept',addItem:'inv',editItem:'inv:view',move:'inv',addRfq:'rfqs',rfqFromItem:'rfqs',openRfq:'rfqs:view',award:'rfqs',delQuote:'rfqs',cancelRfq:'rfqs',paste:'rfqs',invite:'rfqs',copyInvite:'rfqs',
+const ACT_MOD={addSupplier:'suppliers',editSupplier:'suppliers:view',autoCodeSup:'suppliers',xlImportSup:'suppliers',xlImportItems:'inv',addWh:'wh',editWh:'wh:view',seedWh:'wh',addDept:'dept',editDept:'dept:view',seedDept:'dept',addItem:'inv',editItem:'inv:view',move:'inv',addRfq:'rfqs',rfqFromItem:'rfqs',openRfq:'rfqs:view',award:'rfqs',delQuote:'rfqs',cancelRfq:'rfqs',paste:'rfqs',invite:'rfqs',copyInvite:'rfqs',
   addPo:'pos',openPo:'pos:view',editPo:'pos',sendPo:'pos',cancelPo:'pos',approvePo:'approve',rejectPo:'approve',receive:'grn',grnNew:'grn',openGrn:'grn:view',inspect:'qa',issueNew:'issue',openIssue:'issue:view',
   iretNew:'iret',openIret:'iret:view',rretNew:'rret',openRret:'rret:view',addShip:'ship',editShip:'ship',shipNext:'ship',openShip:'ship:view',settings:'admin',clearSample:'admin',setRole:'admin',delRole:'admin',addRole:'admin',dismissReq:'admin',exportXlsx:'reports:view',copyReport:'reports:view'};
 const COL_MOD={suppliers:'suppliers',items:'inv',pos:'pos',shipments:'ship',warehouses:'wh',depts:'dept'};
