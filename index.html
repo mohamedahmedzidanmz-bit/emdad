@@ -515,7 +515,9 @@ const itemUnit=id=>{const i=byId('items',id);return i?i.unit||'':''};
 const supName=id=>{const s=byId('suppliers',id);return s?s.name:'مورد محذوف'};
 function genNo(p){const d=new Date();const r=Math.random().toString(36).slice(2,6).toUpperCase().padEnd(4,'X');return `${p}-${String(d.getFullYear()).slice(2)}${pad(d.getMonth()+1)}-${r}`}
 const cfg=()=>byId('settings','main')||{};
-const formUrl=()=>(cfg().formUrl||DEFAULT_FORM_URL).split('#')[0];
+// a saved link only overrides the built-in one when it points somewhere suppliers can reach (never a local test address)
+const localUrl=u=>/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)|^file:|^data:/i.test(String(u||'').trim());
+const formUrl=()=>{const s=String(cfg().formUrl||'').trim();return(s&&!localUrl(s)?s:DEFAULT_FORM_URL).split('#')[0]};
 function b64e(o){const b=new TextEncoder().encode(JSON.stringify(o));let s='';b.forEach(x=>s+=String.fromCharCode(x));return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')}
 function b64d(t){t=t.replace(/-/g,'+').replace(/_/g,'/');while(t.length%4)t+='=';const bin=atob(t);return JSON.parse(new TextDecoder().decode(Uint8Array.from(bin,c=>c.charCodeAt(0))))}
 function waNum(p){let d=String(p||'').replace(/\D/g,'');if(d.startsWith('00'))d=d.slice(2);if(d.length===11&&d.startsWith('01'))d='2'+d;return d}
@@ -965,9 +967,9 @@ function settingsForm(){
     ${fld('اسم المصنع / الشركة','company',{value:c.company,full:true,hint:'بيظهر للمورد في أول نموذج عرض السعر'})}
     ${fld('رقم واتساب المصنع','whatsapp',{value:c.whatsapp,type:'tel',full:true,attrs:'dir="ltr" placeholder="01xxxxxxxxx"',hint:'ردود الموردين بتتبعت على الرقم ده'})}
     ${fld('حد اعتماد أوامر الشراء (ج.م)','approvalLimit',{value:approvalLimit(),type:'number',full:true,attrs:'min="0" step="1000"',hint:'أي أمر شراء قيمته فوق المبلغ ده بيستنى اعتماد الإدارة. اكتب 0 لو مش عايز اعتماد.'})}
-    ${fld('لينك نموذج المورد','formUrl',{value:c.formUrl||DEFAULT_FORM_URL,full:true,attrs:'dir="ltr"',hint:'سيبه زي ما هو، إلا لو عملت نسخة تانية من النموذج'})}
+    ${fld('لينك نموذج المورد','formUrl',{value:c.formUrl&&!localUrl(c.formUrl)?c.formUrl:'',full:true,attrs:`dir="ltr" placeholder="${esc(DEFAULT_FORM_URL)}"`,hint:'سيبه فاضي وهيستخدم النموذج اللي جنب البرنامج تلقائي. اكتب لينك هنا بس لو النموذج متستضاف في مكان تاني.'})}
   </div>${formActions('احفظ')}</form>`,
-  async fd=>{const d=Object.fromEntries(fd);d.approvalLimit=Math.max(0,+d.approvalLimit||0);await put('settings','main',Object.assign({},strip(c),d));toast('اتحفظت الإعدادات')});
+  async fd=>{const d=Object.fromEntries(fd);d.approvalLimit=Math.max(0,+d.approvalLimit||0);d.formUrl=String(d.formUrl||'').trim();if(d.formUrl===DEFAULT_FORM_URL||localUrl(d.formUrl))d.formUrl='';await put('settings','main',Object.assign({},strip(c),d));toast('اتحفظت الإعدادات')});
 }
 
 /* ---------- POs ---------- */
