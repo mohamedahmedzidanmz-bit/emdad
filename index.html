@@ -723,7 +723,8 @@ function renderDash(){
   for(let i=att.length-1;i>=0;i--){const x=att[i];if(x.only?!canEditMod(x.only):!actAllowed(x.a,{}))att.splice(i,1)}
   const sups=S.suppliers.map(s=>({s,st:supStats(s.id)})).sort((a,b)=>(b.st.score??-1)-(a.st.score??-1));
   const mv=[...S.movements].sort((a,b)=>(b.ts||0)-(a.ts||0)).slice(0,8);
-  const hasSample=COLS.some(c=>S[c].some(x=>x.sample));
+  // sample-data flag is exactly true; inspections also have a numeric `sample` (the AQL sample size), which must not count
+  const hasSample=COLS.some(c=>S[c].some(x=>x.sample===true));
   const qb=[['addRfq','طلب عرض سعر','rfqs'],['grnNew','إذن استلام','grn'],['issueNew','إذن صرف','issue'],['addPo','أمر شراء جديد','pos']].filter(x=>canEditMod(x[2]));
   return head('نظرة عامة',`النهارده ${today()}`,qb.map((x,i)=>`<button class="btn${i===qb.length-1?' pri':''}" data-a="${x[0]}">${x[1]}</button>`).join(''))+
   (hasSample&&canEditMod('admin')?`<div class="note"><span>الصفحة فيها بيانات مثال (موردين وأصناف وهمية) عشان تشوف المنظومة شغالة. امسحها لما تبدأ تدخل بياناتك.</span><button class="btn sm danger w" data-a="clearSample">امسح بيانات المثال</button></div>`:'')+
@@ -1627,7 +1628,7 @@ const ACT={
   addLine:()=>{const w=$('#lines');w.insertAdjacentHTML('beforeend',lineRow({},{np:w.dataset.np==='1'}));if(w.closest('form.ship'))w.lastElementChild.querySelector('[name=li_price]').required=false},
   rmLine:(d,b)=>{const w=b.closest('.lines');if(w.children.length>1||w.dataset.optional==='1')b.closest('.line').remove()},
   del:(d,b)=>arm(b,()=>run(async()=>{await remove(d.col,d.id);closeDrawer();toast('اتحذف')})),
-  clearSample:(d,b)=>arm(b,()=>run(async()=>{let n=0;for(const c of COLS)for(const x of S[c].filter(x=>x.sample)){await remove(c,x.id);n++}toast(`اتمسح ${n} سجل مثال`)}))
+  clearSample:(d,b)=>arm(b,()=>run(async()=>{let n=0;for(const c of COLS)for(const x of S[c].filter(x=>x.sample===true)){await remove(c,x.id);n++}toast(`اتمسح ${n} سجل مثال`)}))
 };
 function arm(b,fn){if(b.dataset.armed){delete b.dataset.armed;fn();return}const t=b.textContent;b.dataset.armed='1';b.textContent='اضغط تاني للتأكيد';setTimeout(()=>{if(b.isConnected&&b.dataset.armed){delete b.dataset.armed;b.textContent=t}},3500)}
 // action -> module it belongs to; ':view' opens a record (read allowed if the module is visible)
