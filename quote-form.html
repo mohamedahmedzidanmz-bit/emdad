@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}</style></head><body>
+<html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><script src="config.js"></script><style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}</style></head><body>
 <title>نموذج عرض سعر</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -71,6 +71,7 @@ h3{margin:4px 0 0;font-family:var(--f-display);font-weight:600;font-size:14px;co
 .btn.wa{background:var(--wa);border-color:var(--wa);color:#fff}
 .done{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:18px;display:flex;flex-direction:column;gap:14px}
 .done .ok{display:flex;gap:10px;align-items:center;color:var(--ok);font-weight:600}
+.done .ok.warn{color:var(--bad)}
 .done .ok i{width:26px;height:26px;border-radius:50%;background:var(--ok-soft);display:grid;place-items:center;font-style:normal}
 .steps{margin:0;padding-inline-start:20px;color:var(--muted);font-size:14px}
 .codebox{border:1px dashed var(--line);background:var(--sunk);border-radius:var(--r);padding:10px 12px;font-size:13px;white-space:pre-wrap;word-break:break-all;user-select:all;unicode-bidi:plaintext}
@@ -138,6 +139,9 @@ h3{margin:4px 0 0;font-family:var(--f-display);font-weight:600;font-size:14px;co
 <script>
 document.documentElement.dir='rtl';document.documentElement.lang='ar';
 const $=s=>document.querySelector(s);
+// when the page ships with the factory's database settings (config.js), quotes are sent straight into the system
+const ONLINE=(()=>{const c=window.EMDAD_CONFIG;return c&&c.supabaseUrl&&c.supabaseAnonKey&&!/YOUR-/.test(c.supabaseUrl+c.supabaseAnonKey)?{url:c.supabaseUrl.replace(/\/$/,''),key:c.supabaseAnonKey}:null})();
+if(ONLINE){const b=document.querySelector('#form [type=submit]');if(b)b.textContent='ابعت العرض للمصنع';const f=document.querySelector('.foot');if(f)f.textContent='عرضك بيتسجل عند المصنع أول ما تدوس «ابعت العرض للمصنع».'}
 const CUR={EGP:'ج.م',USD:'$',EUR:'€',CNY:'¥'};
 const num=n=>(Number(n)||0).toLocaleString('en-US',{maximumFractionDigits:2});
 // Arabic-Indic / Persian digits and separators -> ASCII number
@@ -209,11 +213,29 @@ form.addEventListener('submit',e=>{
   ].filter(Boolean).concat(['',`كود العرض (متغيرش فيه):`,'EMDAD2.'+b64e(reply)]).join('\n');
   $('#msgBox').textContent=msg;
   const wa=String(R.w||'').replace(/\D/g,'');
+  $('#waBtn').href=`https://wa.me/${wa}?text=${encodeURIComponent(msg)}`;
+  if(!ONLINE)return showDone('whatsapp');
+  // online version: the quote goes straight into the factory's system; WhatsApp stays as a fallback
+  const btn=form.querySelector('[type=submit]');btn.disabled=true;btn.textContent='بنبعت العرض…';
+  fetch(ONLINE.url+'/rest/v1/rpc/submit_quote',{method:'POST',headers:{'Content-Type':'application/json',apikey:ONLINE.key,Authorization:'Bearer '+ONLINE.key},body:JSON.stringify({p_rfq:R.r,p_quote:reply})})
+    .then(r=>r.json().then(j=>({ok:r.ok,j}),()=>({ok:false,j:null})))
+    .then(({ok,j})=>{if(ok&&j&&j.ok)return showDone('sent');showDone('failed',j&&j.err)})
+    .catch(()=>showDone('failed'))
+    .finally(()=>{btn.disabled=false;btn.textContent='ابعت العرض للمصنع'});
+});
+function showDone(mode,err){
+  const wa=String(R.w||'').replace(/\D/g,'');
+  const sent=mode==='sent';
+  const why={closed:'الطلب ده اتقفل عند المصنع، فالعرض ماتسجلش أونلاين.',not_found:'الطلب ده مش لاقيينه عند المصنع.',too_many:'وصل عروض كتير على الطلب ده.'}[err];
+  $('.done .ok span').textContent=sent?'وصل عرضك للمصنع ✓ مش محتاج تبعت حاجة تانية.':mode==='failed'?(why||'معرفناش نبعت العرض أونلاين.')+' ابعته على واتساب بدل كده:':'عرضك جاهز. فاضل تبعته.';
+  $('.done .ok').classList.toggle('warn',mode==='failed');
+  $('#howto').hidden=sent;
   $('#howto').innerHTML=(wa?['اضغط "ابعت العرض على واتساب".','واتساب هيفتح على رقم المصنع والرسالة مكتوبة. اضغط إرسال ومتعدلش في الكود.']:['اضغط "انسخ الرسالة".','ابعتها للمصنع على واتساب زي ما هي، ومتعدلش في الكود.']).map(s=>`<li>${s}</li>`).join('');
   $('#waBtn').hidden=!wa;
-  $('#waBtn').href=`https://wa.me/${wa}?text=${encodeURIComponent(msg)}`;
+  $('#waBtn').textContent=sent?'(اختياري) ابعت نسخة على واتساب':'ابعت العرض على واتساب';
+  $('#msgBox').hidden=sent;$('#copyBtn').hidden=sent;
   form.hidden=true;$('#done').hidden=false;window.scrollTo(0,0);
-});
+}
 $('#copyBtn').addEventListener('click',()=>{
   const b=$('#copyBtn'),ok=()=>{b.textContent='اتنسخت';setTimeout(()=>b.textContent='انسخ الرسالة',2000)};
   const fallback=()=>{const r=document.createRange();r.selectNodeContents($('#msgBox'));const s=getSelection();s.removeAllRanges();s.addRange(r);b.textContent='الرسالة متحددة، انسخها'};
