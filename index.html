@@ -3,19 +3,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#714B67">
-<link rel="manifest" href="manifest.webmanifest">
-<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
-<link rel="apple-touch-icon" href="apple-touch-icon.png">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="إمداد">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
-<script>if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));</script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="config.js"></script>
-<script src="backend.js"></script>
-<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}</style>
-</head><body><title>منظومة إمداد المصنع</title>
+<title>إمداد · ديمو</title>
+<script>window.EMDAD_DEMO=true;</script>
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}
+.demo-bar{position:sticky;top:0;z-index:50;background:#714B67;color:#fff;font:13px/1.6 system-ui,-apple-system,"Segoe UI",Tahoma,Arial,sans-serif;text-align:center;padding:6px 10px}
+.demo-bar b{font-weight:700}
+</style>
+</head><body>
+<div class="demo-bar">🧪 نسخة ديمو بداتا وهمية — مفيش حاجة بتتحفظ هنا ولا بتوصل لبيانات أي مصنع حقيقي. <b>كل حاجة هتتمسح لو عملت ريفريش.</b></div><title>منظومة إمداد المصنع</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -422,7 +417,7 @@ tr.grp:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 document.documentElement.dir='rtl';document.documentElement.lang='ar';
 const $=s=>document.querySelector(s);
 const COLS=['suppliers','items','rfqs','pos','inspections','shipments','movements','settings','grns','issues','rreturns','ireturns','roles','requests','warehouses','depts'];
-const DEFAULT_FORM_URL=(()=>{try{return new URL('quote-form.html',location.href).href}catch(e){return 'quote-form.html'}})();
+const DEFAULT_FORM_URL='https://claude.ai/artifact/4YFhdhRbfMxb58gTyXZ3eQ';
 const S={};COLS.forEach(c=>S[c]=[]);
 const loaded=new Set();
 let db=null,mode='loading',canWrite=true;
@@ -757,18 +752,18 @@ function renderDash(){
 function gateHtml(){
   const requested=me.id&&S.requests.some(r=>r.id===me.id);
   return`<div class="gate"><h1>أهلاً ${whoH(me.id)}</h1><p>انت لسه مالكش دور في منظومة إمداد. اطلب صلاحية، والمسؤول هيحدد دورك (مشتريات، مخازن، جودة، شحن، أو متابعة).</p>
-  ${!me.id?'<p>لازم تسجّل دخول الأول علشان تطلب صلاحية.</p>':requested?chip('طلبك اتبعت، مستني موافقة المسؤول','info'):'<button class="btn pri" data-a="requestAccess">اطلب صلاحية</button>'}</div>`;
+  ${!me.id?'<p>لازم تكون داخل بحساب Claude في نفس المؤسسة علشان تطلب صلاحية.</p>':requested?chip('طلبك اتبعت، مستني موافقة المسؤول','info'):'<button class="btn pri" data-a="requestAccess">اطلب صلاحية</button>'}</div>`;
 }
 const roleSel=(id,val)=>`<select class="search" style="width:auto" data-role-for="${esc(id)}" aria-label="الدور">${ASSIGNABLE.map(k=>`<option value="${k}"${k===val?' selected':''}>${ROLES[k].t}</option>`).join('')}</select>`;
 function renderUsers(){
   const reqs=S.requests.filter(r=>!S.roles.some(x=>x.id===r.id)).sort((a,b)=>(b.ts||0)-(a.ts||0));
   const lab=x=>x==='*'?'كل الشاشات':x.map(v=>VIEWS[v]?VIEWS[v].t:v).join('، ');
   return head('المستخدمين والصلاحيات','الدور بيحدد الشاشات اللي الشخص يشوفها والأزرار اللي يقدر يستخدمها.')+
-  `<div class="note"><span>أي حد في التيم يعمل حساب من شاشة الدخول (إيميل وباسورد)، وبعدين يبعت طلب صلاحية يظهرلك هنا، أو تدوّر عليه بالاسم وتحدد دوره. مديرين النظام هما الإيميلات اللي في جدول <b>admins</b> في Supabase.</span></div>
+  `<div class="note"><span>علشان حد يسجّل بيانات لازم حاجتين: يكون واخد <b>Contributor</b> من زرار Share في الصفحة، وتحدد دوره هنا. أصحاب الصفحة والـ Editors بيبقوا مديرين نظام تلقائي.</span></div>
   ${reqs.length?`<section class="panel"><h2>طلبات صلاحية <small>${reqs.length}</small></h2>${tbl(['الشخص','وقت الطلب','الدور',''],reqs.map(r=>`<tr><td>${whoH(r.id)}</td><td class="code">${fmtTs(r.ts)}</td><td>${roleSel(r.id,'viewer')}</td><td><span class="tags"><button class="btn sm pri" data-a="addRole" data-id="${esc(r.id)}">وافق</button><button class="btn sm danger" data-a="dismissReq" data-id="${esc(r.id)}">ارفض</button></span></td></tr>`),'')}</section>`:''}
   <section class="panel"><h2>أضف شخص من المؤسسة</h2><div class="pbody picker"><input class="search" id="userSearch" data-in="usearch" placeholder="اكتب اسم أو إيميل" style="width:100%" autocomplete="off"><div class="res" id="userRes" hidden></div></div></section>
   <section class="panel"><h2>الفريق <small>${S.roles.length} شخص</small></h2>${tbl(['الشخص','الدور','آخر تعديل',''],S.roles.map(r=>`<tr><td>${whoH(r.id)}</td><td>${roleSel(r.id,r.role)}</td><td><span class="code">${fmtTs(r.updatedAt)}</span><span class="sub">${whoH(r.updatedBy)}</span></td><td><button class="btn sm danger" data-a="delRole" data-id="${esc(r.id)}">شيل الصلاحية</button></td></tr>`),'لسه مفيش حد متعيّن. أي حد يفتح الصفحة من غير دور هيقدر يبعت طلب صلاحية يظهرلك هنا، أو دور عليه بالاسم فوق.')}</section>
-  <section class="panel"><h2>مين يقدر يعمل إيه</h2>${tbl(['الدور','بيشوف','بيسجّل في'],['admin',...ASSIGNABLE].map(k=>{const r=ROLES[k];return`<tr><td><b>${r.t}</b>${r.approve?'<span class="sub">بيعتمد أوامر الشراء</span>':''}${k==='admin'?'<span class="sub">الإيميلات اللي في جدول admins</span>':''}</td><td>${lab(r.see)}${k==='admin'?'، والمستخدمين والإعدادات':''}</td><td>${r.edit==='*'?'كل حاجة':r.edit.length?lab(r.edit):'مش بيسجّل'}</td></tr>`}),'')}</section>`;
+  <section class="panel"><h2>مين يقدر يعمل إيه</h2>${tbl(['الدور','بيشوف','بيسجّل في'],['admin',...ASSIGNABLE].map(k=>{const r=ROLES[k];return`<tr><td><b>${r.t}</b>${r.approve?'<span class="sub">بيعتمد أوامر الشراء</span>':''}${k==='admin'?'<span class="sub">أصحاب الصفحة والـ Editors</span>':''}</td><td>${lab(r.see)}${k==='admin'?'، والمستخدمين والإعدادات':''}</td><td>${r.edit==='*'?'كل حاجة':r.edit.length?lab(r.edit):'مش بيسجّل'}</td></tr>`}),'')}</section>`;
 }
 let searchSeq=0;
 async function userSearch(q){
@@ -1714,7 +1709,7 @@ const ACT={
   delQuote:d=>run(async()=>{const r=byId('rfqs',d.id);await patch('rfqs',d.id,{quotes:clone(r.quotes||[]).filter(q=>q.id!==d.q)});openRfq(d.id)}),
   cancelRfq:(d,b)=>arm(b,()=>run(async()=>{await patch('rfqs',d.id,{status:'cancelled'});closeDrawer();toast('اتلغى الطلب')})),
   settings:()=>settingsForm(),paste:()=>pasteForm(),
-  requestAccess:()=>run(async()=>{if(!me.id)return;try{await put('requests',me.id,{ts:Date.now()})}catch(e){toast('الطلب اترفض. جرّب تاني، أو كلّم مدير النظام.','bad');S.requests=S.requests.filter(r=>r.id!==me.id);schedule();return}toast('اتبعت طلب الصلاحية')}),
+  requestAccess:()=>run(async()=>{if(!me.id)return;try{await put('requests',me.id,{ts:Date.now()})}catch(e){toast('الطلب اترفض. اطلب من صاحب الصفحة يديك صلاحية Contributor من Share الأول.','bad');S.requests=S.requests.filter(r=>r.id!==me.id);schedule();return}toast('اتبعت طلب الصلاحية')}),
   addRole:d=>run(async()=>{const s=document.querySelector(`[data-role-for="${CSS.escape(d.id)}"]`);const role=s?s.value:'viewer';await put('roles',d.id,{role},'تعيين دور: '+ROLES[role].t);if(byId('requests',d.id))await remove('requests',d.id);const box=$('#userRes');if(box){box.hidden=true;box.innerHTML=''}const inp=$('#userSearch');if(inp)inp.value='';toast(`اتحدد الدور: ${ROLES[role].t}`)}),
   copyReport:()=>copyText(reportText()),
   exportXlsx:(d,b)=>run(async()=>{
@@ -1764,15 +1759,49 @@ document.addEventListener('change',e=>{const t=e.target;if(!t.dataset||!t.datase
 document.addEventListener('change',e=>{const t=e.target;if(t.name!=='li_item'||t.closest('form.ship'))return;const row=t.closest('.line'),pin=row&&row.querySelector('[name=li_price]'),it=byId('items',t.value);if(pin&&it&&!pin.value)pin.value=it.cost||''});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('#drawer').hidden)closeDrawer();else if((e.key==='Enter'||e.key===' ')&&e.target.matches&&e.target.matches('article[data-a],tr[data-a][tabindex]')){e.preventDefault();e.target.click()}});
 
+/* ---------- demo seed (public demo build only, window.EMDAD_DEMO=true) ---------- */
+function seedDemo(){
+  const t=Date.now(),day=86400000,hist=a=>({hist:[{t:t-day,u:'',a}]});
+  [['WH01','مخزن الخامات','raw','أ. كريم'],['WH02','مخزن المكونات','component','أ. هالة'],['WH03','مخزن المنتج التام','finished','أ. سيد'],['WH05','منطقة الحجر (منتظر فحص)','quarantine','']]
+    .forEach(([code,name,type,keeper])=>localSet('warehouses',genNo('WH'),{code,name,type,keeper,notes:'',active:'yes',createdAt:t,updatedAt:t}));
+  [['PRD-10','القص والتشكيل','prod','م. وائل'],['PRD-40','التجميع','prod','م. منى'],['SRV-80','الجودة','service','م. رامي'],['SRV-90','المخازن','service','أ. كريم']]
+    .forEach(([code,name,kind,manager])=>localSet('depts',genNo('DEP'),{code,name,kind,manager,active:'yes',createdAt:t,updatedAt:t}));
+  const S1=genNo('SUP'),S2=genNo('SUP'),S3=genNo('SUP'),S4=genNo('SUP'),S5=genNo('SUP');
+  localSet('suppliers',S1,Object.assign({name:'المتحدة للصاج',code:'SUP-R-001',category:'raw',status:'approved',contact:'م. هشام',phone:'01000000001',email:'',city:'العاشر من رمضان',leadDays:12,terms:'30 يوم',notes:'',createdAt:t,updatedAt:t},hist('إنشاء')));
+  localSet('suppliers',S2,Object.assign({name:'بلاستيك الدلتا',code:'SUP-R-002',category:'raw',status:'trial',contact:'أ. سامح',phone:'01000000002',email:'',city:'طنطا',leadDays:10,terms:'نقدي عند الاستلام',notes:'',createdAt:t,updatedAt:t},hist('إنشاء')));
+  localSet('suppliers',S3,Object.assign({name:'إلكترو كومبوننتس',code:'SUP-C-001',category:'component',status:'approved',contact:'Mr. Lee',phone:'',email:'',city:'شنغهاي، الصين',leadDays:35,terms:'30% مقدم و70% عند الشحن',notes:'استيراد، محتاج خطاب اعتماد',createdAt:t,updatedAt:t},hist('إنشاء')));
+  localSet('suppliers',S4,Object.assign({name:'كرتون العبور',code:'SUP-P-001',category:'packaging',status:'approved',contact:'أ. منى',phone:'01000000004',email:'',city:'العبور',leadDays:5,terms:'15 يوم',notes:'',createdAt:t,updatedAt:t},hist('إنشاء')));
+  localSet('suppliers',S5,Object.assign({name:'النحاس للأسلاك',code:'SUP-R-003',category:'raw',status:'approved',contact:'م. عادل',phone:'01000000005',email:'',city:'6 أكتوبر',leadDays:7,terms:'45 يوم',notes:'',createdAt:t,updatedAt:t},hist('إنشاء')));
+  const I1=genNo('IT'),I2=genNo('IT'),I3=genNo('IT'),I4=genNo('IT'),I5=genNo('IT'),I6=genNo('IT');
+  localSet('items',I1,{type:'raw',grp:'01',sku:'RM-01-0001',unit:'كجم',name:'صاج استانلس 1.2مم',location:'WH01-A01',onHand:4600,cost:62,reorder:1500,safety:600,prefSupplier:S1,createdAt:t,updatedAt:t});
+  localSet('items',I2,{type:'raw',grp:'02',sku:'RM-02-0001',unit:'كجم',name:'حبيبات بلاستيك PP',location:'WH01-A04',onHand:850,cost:38,reorder:1000,safety:300,prefSupplier:S2,createdAt:t,updatedAt:t});
+  localSet('items',I3,{type:'raw',grp:'03',sku:'RM-03-0001',unit:'كجم',name:'سلك نحاس 0.5مم',location:'WH01-B02',onHand:120,cost:410,reorder:300,safety:100,prefSupplier:S5,createdAt:t,updatedAt:t});
+  localSet('items',I4,{type:'component',grp:'01',sku:'CP-01-0001',unit:'قطعة',name:'رولمان بلي 608ZZ',location:'WH02-A01',onHand:4600,cost:9.5,reorder:2000,safety:800,prefSupplier:S3,createdAt:t,updatedAt:t});
+  localSet('items',I5,{type:'packaging',grp:'01',sku:'PK-01-0001',unit:'كرتونة',name:'كرتون تعبئة مقاس 40x30',location:'WH03-C01',onHand:300,cost:7.2,reorder:500,safety:150,prefSupplier:S4,createdAt:t,updatedAt:t});
+  localSet('items',I6,{type:'finished',grp:'01',sku:'FG-01-0001',unit:'قطعة',name:'موتور كهربائي نص حصان',location:'WH03-A01',onHand:180,cost:950,reorder:100,safety:40,prefSupplier:'',createdAt:t,updatedAt:t});
+  const R1=genNo('RFQ'),R2=genNo('RFQ'),R3=genNo('RFQ');
+  localSet('rfqs',R1,Object.assign({no:R1,itemId:I1,qty:3000,neededBy:addDays(today(),14),replyBy:addDays(today(),5),notes:'لازم شهادة مطابقة مع الشحنة',status:'open',invited:{[S1]:t,[S2]:t},date:today(),ts:t-2*day,quotes:[
+    {id:'Q-DEMO-1',supplierId:S1,price:63.5,origPrice:63.5,cur:'EGP',fx:1,fxPending:false,vat:'exc',dlv:'yes',qa:3000,leadDays:10,validUntil:addDays(today(),20),terms:'30 يوم',notes:'',source:'link',direct:true,date:today()},
+    {id:'Q-DEMO-2',supplierId:S2,price:19.8,origPrice:19.8,cur:'USD',fx:null,fxPending:true,vat:'inc',dlv:'no',qa:3000,leadDays:15,validUntil:addDays(today(),15),terms:'نقدي','notes':'سعر يعتمد على الدولار يوم التوريد',source:'link',direct:true,date:today()}
+  ]},hist('اتفتح الطلب')));
+  localSet('rfqs',R2,Object.assign({no:R2,itemId:I4,qty:8000,neededBy:addDays(today(),-2),replyBy:addDays(today(),-5),notes:'',status:'awarded',awardedQuoteId:'Q-DEMO-3',poId:'',date:addDays(today(),-10),ts:t-10*day,quotes:[
+    {id:'Q-DEMO-3',supplierId:S3,price:9.1,origPrice:9.1,cur:'EGP',fx:1,fxPending:false,vat:'exc',dlv:'yes',qa:8000,leadDays:35,validUntil:addDays(today(),-1),terms:'30% مقدم و70% عند الشحن',notes:'',source:'manual',direct:false,date:addDays(today(),-10)}
+  ]},hist('اتفتح الطلب')));
+  const P1=genNo('PO');
+  localSet('pos',P1,Object.assign({no:P1,date:addDays(today(),-9),ts:t-9*day,status:'sent',receipts:[],supplierId:S3,expected:addDays(today(),5),notes:'ترسية على '+R2,lines:[{itemId:I4,qty:8000,price:9.1,received:0}],rfqId:R2},hist('إنشاء من ترسية '+R2)));
+  localSet('rfqs',R2,Object.assign(byId('rfqs',R2),{poId:P1}));
+  localSet('rfqs',R3,Object.assign({no:R3,itemId:I5,qty:1200,neededBy:addDays(today(),21),replyBy:addDays(today(),7),notes:'',status:'open',invited:{},date:today(),ts:t-day,quotes:[]},hist('اتفتح الطلب')));
+}
+
 /* ---------- boot ---------- */
 async function boot(){
   try{const h=location.hash.slice(1);if(VIEWS[h]){ui.view=h;ui.home=false}}catch(e){}
   if(matchMedia('(max-width:700px)').matches)Object.keys(KB).forEach(k=>ui.vm[k]='kanban');
   render();
   const c=window.claude;
-  if(!c||typeof c.use!=='function'){mode='local';render();return}
+  if(!c||typeof c.use!=='function'){mode='local';if(window.EMDAD_DEMO)seedDemo();render();return}
   try{db=await c.use('db')}catch(e){db=null}
-  if(!db){mode='local';render();return}
+  if(!db){mode='local';if(window.EMDAD_DEMO)seedDemo();render();return}
   mode='live';
   try{const u=await c.use('user');if(u){userNS=u;const[id,own,ed,w]=await Promise.all([u.id(),u.isOwner(),u.canEdit(),u.can('data.write')]);me={id,owner:own,editor:ed};if(w===false)canWrite=false}}catch(e){}
   c.use('downloads').then(d=>{downloadsNS=d}).catch(()=>{});
