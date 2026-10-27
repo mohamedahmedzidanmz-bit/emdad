@@ -1295,7 +1295,7 @@ function itemCard(i){const[l,t]=stockState(i);const cap=Math.max(1,(+i.reorder||
   return`<article class="o-card hz" data-a="editItem" data-id="${i.id}" tabindex="0" role="button"><span class="o-tile" style="background:${hue(i.type)}">${svg(IC.inventory)}</span><div class="o-cbody"><div class="r"><b>${esc(i.name)}</b></div><span class="m"><span class="code">${esc(i.sku||'')}</span> · ${ITEM_T[i.type]||''}</span><div class="r"><span><b class="num">${num(i.onHand,2)}</b> ${esc(i.unit||'')}</span>${chip(l,t)}</div><div class="meter"><i class="${t==='ok'?'':t}" style="width:${w}%"></i></div><span class="m">${money(i.cost)} للوحدة · ${esc(i.location||'بدون موقع')}</span></div></article>`}
 function itemForm(id){
   const i=id?byId('items',id):{type:'raw',unit:'كجم',onHand:0,reorder:0,safety:0,cost:0};
-  openDrawer(id?i.name:'صنف جديد',(id?smartRow([sb('inventory','الرصيد · الحركات',`${num(i.onHand,2)} ${esc(i.unit||'')}`,'inv',i.name,'invTab:moves'),sb('purchase','في الطريق',num(onOrder(id),2),'pos',i.name,'poFilter:open'),sb('quality','تحت الفحص',num(quarantine(id),2),'qa','','qaTab:pending'),sb('ship','أذون صرف',S.issues.filter(s=>(s.lines||[]).some(l=>l.itemId===id)).length,'issue',i.name),sb('money','قيمة الرصيد',money((+i.onHand||0)*(+i.cost||0)))]):'')+`<form class="main"><div class="fg">
+  openDrawer(id?i.name:'صنف جديد',(id?smartRow([sb('inventory','الرصيد · الحركات',`${num(i.onHand,2)} ${esc(i.unit||'')}`,'inv',i.name,'invTab:moves'),sb('purchase','في الطريق',num(onOrder(id),2),'pos',i.name,'poFilter:open'),sb('quality','تحت الفحص',num(quarantine(id),2),'qa','','qaTab:pending'),sb('ship','أذون صرف',S.issues.filter(s=>(s.lines||[]).some(l=>l.itemId===id)).length,'issue',i.name),sb('money','قيمة الرصيد',money((+i.onHand||0)*(+i.cost||0))),`<button data-a="openLedger" data-id="${id}">${svg(IC.doc)}<span><b>كارتة الصنف</b>بالتفصيل</span></button>`]):'')+`<form class="main"><div class="fg">
     ${sel('النوع','type',Object.entries(ITEM_T),i.type)}
     ${fld('المجموعة','grp',{value:i.grp||'01',attrs:'dir="ltr" inputmode="numeric" maxlength="2"',hint:'رقمين، مثلًا 01 صاج · 02 بلاستيك'})}
     ${fld('كود الصنف (SKU)','sku',{value:i.sku||nextSku(i.type,i.grp,id),req:true,attrs:'dir="ltr" maxlength="30"',hint:'بيتقترح تلقائي من النوع والمجموعة (زي RM-01-0007)'})}
@@ -1317,6 +1317,20 @@ function itemForm(id){
   body=>{const f=body.querySelector('form.main');if(!i.sku||!id)autoCode(f.sku,()=>nextSku(f.type.value,f.grp.value,id),[f.type,f.grp])});
 }
 
+/* ---------- item ledger (كارتة الصنف) ---------- */
+function ledgerRows(id){
+  const mv=S.movements.filter(m=>m.itemId===id).sort((a,b)=>(a.ts||0)-(b.ts||0));
+  let bal=0;return mv.map(m=>{bal+=(+m.qty||0);return Object.assign({},m,{bal})});
+}
+function itemLedger(id){
+  const i=byId('items',id);if(!i)return;
+  const rows=ledgerRows(id);
+  const tr=m=>`<tr><td class="code">${m.date}</td><td>${MV_T[m.type]||m.type}</td><td>${m.ref?code(m.ref):'—'}</td><td>${esc(m.note||'')}</td><td class="num" style="color:var(--ok)">${m.qty>0?num(m.qty,2):'—'}</td><td class="num" style="color:var(--bad)">${m.qty<0?num(-m.qty,2):'—'}</td><td class="num"><b>${num(m.bal,2)}</b></td></tr>`;
+  openDrawer(`كارتة ${i.sku||i.name}`,smartRow([sb('inventory','الرصيد الحالي',`${num(i.onHand,2)} ${esc(i.unit||'')}`),sb('money','قيمة الرصيد',money((+i.onHand||0)*(+i.cost||0)))])+
+  `<div class="kv"><div><small>الصنف</small><b>${esc(i.name)}</b></div><div><small>الكود</small><b>${esc(i.sku||'—')}</b></div><div><small>الوحدة</small><b>${esc(i.unit||'—')}</b></div><div><small>عدد الحركات</small><b>${rows.length}</b></div></div>
+  <div class="actions"><span></span><button class="btn pri" data-a="exportLedger" data-id="${id}">تصدير Excel</button></div>
+  <div class="panel">${tbl(['التاريخ','نوع الحركة','المرجع','ملاحظة',['وارد','num'],['منصرف','num'],['الرصيد','num']],rows.map(tr),'مفيش حركات على الصنف ده لسه.')}</div>`);
+}
 /* ---------- warehouses ---------- */
 const WH_SEED=[['WH01','مخزن الخامات','raw'],['WH02','مخزن المكونات','component'],['WH03','مخزن التغليف','packaging'],['WH04','مخزن المنتج التام','finished'],['WH05','منطقة الحجر (منتظر فحص)','quarantine'],['WH06','المرفوضات والهالك','reject']];
 const whItems=w=>S.items.filter(i=>String(i.location||'').toUpperCase().startsWith(String(w.code).toUpperCase()));
@@ -1717,6 +1731,21 @@ const ACT={
   requestAccess:()=>run(async()=>{if(!me.id)return;try{await put('requests',me.id,{ts:Date.now()})}catch(e){toast('الطلب اترفض. جرّب تاني، أو كلّم مدير النظام.','bad');S.requests=S.requests.filter(r=>r.id!==me.id);schedule();return}toast('اتبعت طلب الصلاحية')}),
   addRole:d=>run(async()=>{const s=document.querySelector(`[data-role-for="${CSS.escape(d.id)}"]`);const role=s?s.value:'viewer';await put('roles',d.id,{role},'تعيين دور: '+ROLES[role].t);if(byId('requests',d.id))await remove('requests',d.id);const box=$('#userRes');if(box){box.hidden=true;box.innerHTML=''}const inp=$('#userSearch');if(inp)inp.value='';toast(`اتحدد الدور: ${ROLES[role].t}`)}),
   copyReport:()=>copyText(reportText()),
+  openLedger:d=>itemLedger(d.id),
+  exportLedger:(d,b)=>run(async()=>{
+    const i=byId('items',d.id);if(!i)return;const rows=ledgerRows(d.id);
+    b.disabled=true;const t=b.textContent;b.textContent='بنجهّز الملف…';
+    try{const X=await loadXLSX();
+      const N='#,##0.00',f=(x,v)=>({t:'n',f:x,v:Math.round((+v||0)*10000)/10000,z:N}),n=v=>({t:'n',v:+v||0,z:N});
+      let r=1;const body=rows.map((m,idx)=>{r++;const prev=idx?`G${r-1}`:'0';return[m.date,MV_T[m.type]||m.type,m.ref||'',m.note||'',n(m.qty>0?m.qty:0),n(m.qty<0?-m.qty:0),f(`${prev}+E${r}-F${r}`,m.bal)]});
+      const ws=X.utils.aoa_to_sheet([['كارتة الصنف: '+(i.sku||i.name)],[i.name],[],['التاريخ','نوع الحركة','المرجع','ملاحظة','وارد','منصرف','الرصيد'],...body]);
+      ws['!cols']=[{wch:12},{wch:16},{wch:16},{wch:28},{wch:12},{wch:12},{wch:12}];
+      const wb=X.utils.book_new();wb.Workbook={Views:[{RTL:true}]};X.utils.book_append_sheet(wb,ws,'كارتة الصنف');
+      const buf=X.write(wb,{bookType:'xlsx',type:'array'});
+      if(!downloadsNS){toast('تنزيل الملفات شغال في النسخة المنشورة بس','bad');return}
+      try{await downloadsNS.save({filename:`كارتة ${i.sku||i.name}.xlsx`,data:buf});toast('اتحفظ ملف Excel')}catch(e){toast(e&&e.code==='declined'?'اتلغى التنزيل':'التنزيل مش متاح هنا: '+((e&&e.message)||''),'bad')}
+    }finally{b.disabled=false;b.textContent=t}
+  }),
   exportXlsx:(d,b)=>run(async()=>{
     const D=reportData();b.disabled=true;const t=b.textContent;b.textContent='بنجهّز الملف…';
     try{const X=await loadXLSX();const buf=X.write(buildWorkbook(X,D),{bookType:'xlsx',type:'array'});
@@ -1748,7 +1777,7 @@ function arm(b,fn){if(b.dataset.armed){delete b.dataset.armed;fn();return}const 
 // action -> module it belongs to; ':view' opens a record (read allowed if the module is visible)
 const ACT_MOD={addSupplier:'suppliers',editSupplier:'suppliers:view',autoCodeSup:'suppliers',xlImportSup:'suppliers',xlImportItems:'inv',addWh:'wh',editWh:'wh:view',seedWh:'wh',addDept:'dept',editDept:'dept:view',seedDept:'dept',addItem:'inv',editItem:'inv:view',move:'inv',addRfq:'rfqs',rfqFromItem:'rfqs',openRfq:'rfqs:view',award:'rfqs',setFx:'rfqs',delQuote:'rfqs',cancelRfq:'rfqs',paste:'rfqs',invite:'rfqs',copyInvite:'rfqs',
   addPo:'pos',openPo:'pos:view',editPo:'pos',sendPo:'pos',cancelPo:'pos',approvePo:'approve',rejectPo:'approve',receive:'grn',grnNew:'grn',openGrn:'grn:view',inspect:'qa',issueNew:'issue',openIssue:'issue:view',
-  iretNew:'iret',openIret:'iret:view',rretNew:'rret',openRret:'rret:view',addShip:'ship',editShip:'ship',shipNext:'ship',openShip:'ship:view',settings:'admin',clearSample:'admin',setRole:'admin',delRole:'admin',addRole:'admin',dismissReq:'admin',exportXlsx:'reports:view',copyReport:'reports:view'};
+  iretNew:'iret',openIret:'iret:view',rretNew:'rret',openRret:'rret:view',addShip:'ship',editShip:'ship',shipNext:'ship',openShip:'ship:view',settings:'admin',clearSample:'admin',setRole:'admin',delRole:'admin',addRole:'admin',dismissReq:'admin',exportXlsx:'reports:view',copyReport:'reports:view',openLedger:'inv:view',exportLedger:'inv:view'};
 const COL_MOD={suppliers:'suppliers',items:'inv',pos:'pos',shipments:'ship',warehouses:'wh',depts:'dept'};
 const actAllowed=(name,d)=>{let spec=name==='del'?COL_MOD[d.col]:ACT_MOD[name];if(!spec)return true;const[m,v]=spec.split(':');return v==='view'?(canSee(m)||canEditMod(m)):canEditMod(m)};
 document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(!b)return;const name=b.dataset.a,a=ACT[name];if(!a)return;
