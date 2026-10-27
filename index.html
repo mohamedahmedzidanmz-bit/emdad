@@ -3,14 +3,19 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#714B67">
-<title>إمداد · ديمو</title>
-<script>window.EMDAD_DEMO=true;</script>
-<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}
-.demo-bar{position:sticky;top:0;z-index:50;background:#714B67;color:#fff;font:13px/1.6 system-ui,-apple-system,"Segoe UI",Tahoma,Arial,sans-serif;text-align:center;padding:6px 10px}
-.demo-bar b{font-weight:700}
-</style>
-</head><body>
-<div class="demo-bar">🧪 نسخة ديمو بداتا وهمية — مفيش حاجة بتتحفظ هنا ولا بتوصل لبيانات أي مصنع حقيقي. <b>كل حاجة هتتمسح لو عملت ريفريش.</b></div><title>منظومة إمداد المصنع</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="إمداد">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<script>if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));</script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
+<script src="backend.js"></script>
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}</style>
+</head><body><title>منظومة إمداد المصنع</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -417,7 +422,7 @@ tr.grp:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 document.documentElement.dir='rtl';document.documentElement.lang='ar';
 const $=s=>document.querySelector(s);
 const COLS=['suppliers','items','rfqs','pos','inspections','shipments','movements','settings','grns','issues','rreturns','ireturns','roles','requests','warehouses','depts'];
-const DEFAULT_FORM_URL='https://claude.ai/artifact/4YFhdhRbfMxb58gTyXZ3eQ';
+const DEFAULT_FORM_URL=(()=>{try{return new URL('quote-form.html',location.href).href}catch(e){return 'quote-form.html'}})();
 const S={};COLS.forEach(c=>S[c]=[]);
 const loaded=new Set();
 let db=null,mode='loading',canWrite=true;
@@ -752,18 +757,18 @@ function renderDash(){
 function gateHtml(){
   const requested=me.id&&S.requests.some(r=>r.id===me.id);
   return`<div class="gate"><h1>أهلاً ${whoH(me.id)}</h1><p>انت لسه مالكش دور في منظومة إمداد. اطلب صلاحية، والمسؤول هيحدد دورك (مشتريات، مخازن، جودة، شحن، أو متابعة).</p>
-  ${!me.id?'<p>لازم تكون داخل بحساب Claude في نفس المؤسسة علشان تطلب صلاحية.</p>':requested?chip('طلبك اتبعت، مستني موافقة المسؤول','info'):'<button class="btn pri" data-a="requestAccess">اطلب صلاحية</button>'}</div>`;
+  ${!me.id?'<p>لازم تسجّل دخول الأول علشان تطلب صلاحية.</p>':requested?chip('طلبك اتبعت، مستني موافقة المسؤول','info'):'<button class="btn pri" data-a="requestAccess">اطلب صلاحية</button>'}</div>`;
 }
 const roleSel=(id,val)=>`<select class="search" style="width:auto" data-role-for="${esc(id)}" aria-label="الدور">${ASSIGNABLE.map(k=>`<option value="${k}"${k===val?' selected':''}>${ROLES[k].t}</option>`).join('')}</select>`;
 function renderUsers(){
   const reqs=S.requests.filter(r=>!S.roles.some(x=>x.id===r.id)).sort((a,b)=>(b.ts||0)-(a.ts||0));
   const lab=x=>x==='*'?'كل الشاشات':x.map(v=>VIEWS[v]?VIEWS[v].t:v).join('، ');
   return head('المستخدمين والصلاحيات','الدور بيحدد الشاشات اللي الشخص يشوفها والأزرار اللي يقدر يستخدمها.')+
-  `<div class="note"><span>علشان حد يسجّل بيانات لازم حاجتين: يكون واخد <b>Contributor</b> من زرار Share في الصفحة، وتحدد دوره هنا. أصحاب الصفحة والـ Editors بيبقوا مديرين نظام تلقائي.</span></div>
+  `<div class="note"><span>أي حد في التيم يعمل حساب من شاشة الدخول (إيميل وباسورد)، وبعدين يبعت طلب صلاحية يظهرلك هنا، أو تدوّر عليه بالاسم وتحدد دوره. مديرين النظام هما الإيميلات اللي في جدول <b>admins</b> في Supabase.</span></div>
   ${reqs.length?`<section class="panel"><h2>طلبات صلاحية <small>${reqs.length}</small></h2>${tbl(['الشخص','وقت الطلب','الدور',''],reqs.map(r=>`<tr><td>${whoH(r.id)}</td><td class="code">${fmtTs(r.ts)}</td><td>${roleSel(r.id,'viewer')}</td><td><span class="tags"><button class="btn sm pri" data-a="addRole" data-id="${esc(r.id)}">وافق</button><button class="btn sm danger" data-a="dismissReq" data-id="${esc(r.id)}">ارفض</button></span></td></tr>`),'')}</section>`:''}
   <section class="panel"><h2>أضف شخص من المؤسسة</h2><div class="pbody picker"><input class="search" id="userSearch" data-in="usearch" placeholder="اكتب اسم أو إيميل" style="width:100%" autocomplete="off"><div class="res" id="userRes" hidden></div></div></section>
   <section class="panel"><h2>الفريق <small>${S.roles.length} شخص</small></h2>${tbl(['الشخص','الدور','آخر تعديل',''],S.roles.map(r=>`<tr><td>${whoH(r.id)}</td><td>${roleSel(r.id,r.role)}</td><td><span class="code">${fmtTs(r.updatedAt)}</span><span class="sub">${whoH(r.updatedBy)}</span></td><td><button class="btn sm danger" data-a="delRole" data-id="${esc(r.id)}">شيل الصلاحية</button></td></tr>`),'لسه مفيش حد متعيّن. أي حد يفتح الصفحة من غير دور هيقدر يبعت طلب صلاحية يظهرلك هنا، أو دور عليه بالاسم فوق.')}</section>
-  <section class="panel"><h2>مين يقدر يعمل إيه</h2>${tbl(['الدور','بيشوف','بيسجّل في'],['admin',...ASSIGNABLE].map(k=>{const r=ROLES[k];return`<tr><td><b>${r.t}</b>${r.approve?'<span class="sub">بيعتمد أوامر الشراء</span>':''}${k==='admin'?'<span class="sub">أصحاب الصفحة والـ Editors</span>':''}</td><td>${lab(r.see)}${k==='admin'?'، والمستخدمين والإعدادات':''}</td><td>${r.edit==='*'?'كل حاجة':r.edit.length?lab(r.edit):'مش بيسجّل'}</td></tr>`}),'')}</section>`;
+  <section class="panel"><h2>مين يقدر يعمل إيه</h2>${tbl(['الدور','بيشوف','بيسجّل في'],['admin',...ASSIGNABLE].map(k=>{const r=ROLES[k];return`<tr><td><b>${r.t}</b>${r.approve?'<span class="sub">بيعتمد أوامر الشراء</span>':''}${k==='admin'?'<span class="sub">الإيميلات اللي في جدول admins</span>':''}</td><td>${lab(r.see)}${k==='admin'?'، والمستخدمين والإعدادات':''}</td><td>${r.edit==='*'?'كل حاجة':r.edit.length?lab(r.edit):'مش بيسجّل'}</td></tr>`}),'')}</section>`;
 }
 let searchSeq=0;
 async function userSearch(q){
@@ -1709,7 +1714,7 @@ const ACT={
   delQuote:d=>run(async()=>{const r=byId('rfqs',d.id);await patch('rfqs',d.id,{quotes:clone(r.quotes||[]).filter(q=>q.id!==d.q)});openRfq(d.id)}),
   cancelRfq:(d,b)=>arm(b,()=>run(async()=>{await patch('rfqs',d.id,{status:'cancelled'});closeDrawer();toast('اتلغى الطلب')})),
   settings:()=>settingsForm(),paste:()=>pasteForm(),
-  requestAccess:()=>run(async()=>{if(!me.id)return;try{await put('requests',me.id,{ts:Date.now()})}catch(e){toast('الطلب اترفض. اطلب من صاحب الصفحة يديك صلاحية Contributor من Share الأول.','bad');S.requests=S.requests.filter(r=>r.id!==me.id);schedule();return}toast('اتبعت طلب الصلاحية')}),
+  requestAccess:()=>run(async()=>{if(!me.id)return;try{await put('requests',me.id,{ts:Date.now()})}catch(e){toast('الطلب اترفض. جرّب تاني، أو كلّم مدير النظام.','bad');S.requests=S.requests.filter(r=>r.id!==me.id);schedule();return}toast('اتبعت طلب الصلاحية')}),
   addRole:d=>run(async()=>{const s=document.querySelector(`[data-role-for="${CSS.escape(d.id)}"]`);const role=s?s.value:'viewer';await put('roles',d.id,{role},'تعيين دور: '+ROLES[role].t);if(byId('requests',d.id))await remove('requests',d.id);const box=$('#userRes');if(box){box.hidden=true;box.innerHTML=''}const inp=$('#userSearch');if(inp)inp.value='';toast(`اتحدد الدور: ${ROLES[role].t}`)}),
   copyReport:()=>copyText(reportText()),
   exportXlsx:(d,b)=>run(async()=>{
