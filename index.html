@@ -1163,12 +1163,14 @@ function issueForm(itemId,kind){
   if(!S.items.length){toast('أضف صنف الأول','bad');return}
   const isBranch=kind==='branch',depts=isBranch?deptNamesByKind('branch'):deptNames();
   if(isBranch&&!depts.length){toast('مفيش فروع متسجلة لسه. عرّفها من شاشة «الأقسام»','bad');return}
+  const deptList=(isBranch?S.depts.filter(d=>d.active!=='no'&&d.kind==='branch'):S.depts.filter(d=>d.active!=='no')).sort((a,b)=>String(a.code).localeCompare(String(b.code)));
+  const deptField=deptList.length?sel(isBranch?'الفرع المستلم':'الجهة المستلمة','dept',[['','اختار'],...deptList.map(d=>[d.name,`${d.name} (${(DEPT_K[d.kind]||DEPT_K.prod)[0]})`])],'',{full:true,req:true}):fld(isBranch?'الفرع المستلم':'الجهة المستلمة','dept',{value:isBranch?'':'الإنتاج',req:true,attrs:'list="depts"'});
   openDrawer(isBranch?'تسليم لفرع':'إذن صرف جديد',`<form class="main"><div class="fg">
-    ${fld(isBranch?'الفرع المستلم':'الجهة المستلمة','dept',{value:isBranch?'':'الإنتاج',req:true,attrs:'list="depts"'})}
+    ${deptField}
     ${fld(isBranch?'تاريخ التسليم':'تاريخ الصرف','date',{type:'date',value:today(),req:true})}
     ${isBranch?'':fld('أمر التشغيل / المرجع','wo',{attrs:'dir="ltr" placeholder="WO-..."'})}
     ${fld(isBranch?'اسم المستلم في الفرع':'اسم المستلم','by',{})}
-  </div><datalist id="depts">${depts.map(d=>`<option value="${esc(d)}">`).join('')}</datalist>
+  </div>${deptList.length?'':`<datalist id="depts">${depts.map(d=>`<option value="${esc(d)}">`).join('')}</datalist>`}
   <h3 class="sec">الأصناف</h3>${linesBlock([{itemId}],{np:true})}
   <div id="avail" class="f"><small></small></div>
   <div class="fg">${area('ملاحظات','notes','')}</div>
@@ -1637,8 +1639,49 @@ function openCount(id){
   `<div class="kv"><div><small>النطاق</small><b>${esc(c.scopeLabel||'')}</b></div><div><small>التاريخ</small><b>${c.date}</b></div><div><small>عدد الأصناف</small><b>${L.length}</b></div><div><small>اتعد</small><b>${counted}/${L.length}</b></div>${blind?'':`<div><small>فيه فرق</small><b>${diffN}</b></div>`}<div><small>بواسطة</small><b>${whoH(c.createdBy)}</b></div></div>
   ${c.notes?`<div class="note"><span>${esc(c.notes)}</span></div>`:''}
   ${open?(blind?'<p class="hint">اكتب الكمية اللي لقيتها فعليًا جنب كل صنف، بالعد الحقيقي مش من النظام.</p>':'<p class="hint">اكتب الكمية اللي لقيتها فعليًا جنب كل صنف. الفرق بيتحسب لوحده. دوس «احفظ الأرقام» لو عايز تكمل بعدين، أو «اعتماد الجرد» عشان الفرق يتسجل في المخزون على طول (الإجراء ده نهائي).</p>'):''}
+  ${open?`<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+    <button type="button" class="btn sm" data-a="exportCountXlsx" data-id="${id}">تصدير للعد (Excel)</button>
+    <label class="btn sm" style="cursor:pointer;margin:0">استيراد العدد من Excel<input type="file" id="cntFile" accept=".xlsx,.xls,.csv" style="display:none"></label>
+    <span class="sub"><small>نزّل الملف، املا «العدد الفعلي»، وارفعه تاني — من غير ما تغيّر عمود الكود.</small></span>
+  </div>`:''}
   <div class="panel" data-cnt-id="${id}" data-cnt-blind="${blind?1:0}">${tbl(heads,rows,'مفيش أصناف في الجرد ده.')}</div>
-  ${histHtml(c)}`);
+  ${histHtml(c)}`,null,body=>{
+    const fi=body.querySelector('#cntFile');if(!fi)return;
+    fi.addEventListener('change',async e=>{const f=e.target.files[0];if(!f)return;await run(()=>importCountFile(id,f));fi.value=''});
+  });
+}
+async function exportCountXlsx(id){
+  const c=byId('counts',id);if(!c)return;
+  const blind=!canEditMod('approve');
+  const X=await loadXLSX(),wb=X.utils.book_new();wb.Workbook={Views:[{RTL:true}]};
+  const head=blind?['الكود','الصنف','الوحدة','العدد الفعلي']:['الكود','الصنف','الوحدة','رصيد النظام','العدد الفعلي'];
+  const rows=(c.lines||[]).map(x=>{const it=byId('items',x.itemId)||{};return blind?[it.sku||'',it.name||'',it.unit||'',x.actual??'']:[it.sku||'',it.name||'',it.unit||'',x.sys,x.actual??'']});
+  const ws=X.utils.aoa_to_sheet([head,...rows]);ws['!cols']=head.map((h,i)=>({wch:i===1?30:14}));
+  X.utils.book_append_sheet(wb,ws,'جرد');
+  const help=X.utils.aoa_to_sheet([['تعليمات'],['املا عمود «العدد الفعلي» بالكمية اللي لقيتها فعليًا وقت العد، واحفظ الملف، وارجع ارفعه من شاشة الجرد.'],['متغيّرش عمود الكود — بيه بيتم ربط كل صف بالصنف الصح وقت الرفع.'],['سيب «العدد الفعلي» فاضي لأي صنف لسه ما اتعدش، وهيفضل زي ما هو.']]);
+  help['!cols']=[{wch:85}];X.utils.book_append_sheet(wb,help,'تعليمات');
+  if(await saveXlsx(X,wb,`جرد ${c.no}.xlsx`))toast('اتنزّل ملف الجرد. املا العدد الفعلي وارفعه تاني');
+}
+async function importCountFile(id,file){
+  const c=byId('counts',id);if(!c||c.status!=='open'){toast('الجرد ده مش مفتوح','bad');return}
+  const X=await loadXLSX();const wb=X.read(await file.arrayBuffer(),{type:'array'});const ws=wb.Sheets[wb.SheetNames[0]];
+  const rows=X.utils.sheet_to_json(ws,{header:1,defval:'',raw:true});
+  if(!rows.length){toast('الملف فاضي','bad');return}
+  const header=rows[0].map(h=>String(h||'').trim());
+  const codeIdx=header.indexOf('الكود'),actIdx=header.indexOf('العدد الفعلي');
+  if(codeIdx<0||actIdx<0){toast('الملف لازم يكون نفس ملف «تصدير للعد» (لازم عمود «الكود» وعمود «العدد الفعلي»)','bad');return}
+  let matched=0,skipped=0,lines=c.lines||[];
+  rows.slice(1).forEach(r=>{
+    const sku=String(r[codeIdx]??'').trim(),actRaw=r[actIdx];
+    if(!sku||actRaw===''||actRaw==null)return;
+    const act=toNum(actRaw);if(isNaN(act))return;
+    const line=lines.find(x=>{const it=byId('items',x.itemId);return it&&String(it.sku||'').trim()===sku});
+    if(line){line.actual=act;matched++}else skipped++;
+  });
+  if(!matched){toast('مفيش ولا صف اتطابق مع أصناف الجرد ده. استخدم نفس الملف اللي نزّلته من «تصدير للعد»','bad');return}
+  await patch('counts',id,{lines});
+  toast(`اتحدّث عدد ${matched} صنف من الملف${skipped?` (${skipped} صف من غير صنف متطابق)`:''}`);
+  openCount(id);
 }
 document.addEventListener('input',e=>{
   const t=e.target;if(t.dataset.cntActual==null)return;
@@ -1914,7 +1957,7 @@ const ACT={
   addRole:d=>run(async()=>{const s=document.querySelector(`[data-role-for="${CSS.escape(d.id)}"]`);const role=s?s.value:'viewer';await put('roles',d.id,{role},'تعيين دور: '+ROLES[role].t);if(byId('requests',d.id))await remove('requests',d.id);const box=$('#userRes');if(box){box.hidden=true;box.innerHTML=''}const inp=$('#userSearch');if(inp)inp.value='';toast(`اتحدد الدور: ${ROLES[role].t}`)}),
   copyReport:()=>copyText(reportText()),
   openLedger:d=>itemLedger(d.id),
-  addCount:()=>countForm(),openCount:d=>openCount(d.id),
+  addCount:()=>countForm(),openCount:d=>openCount(d.id),exportCountXlsx:(d,b)=>run(async()=>{b.disabled=true;try{await exportCountXlsx(d.id)}finally{b.disabled=false}}),
   saveCount:d=>run(async()=>{const c=byId('counts',d.id);if(!c)return;await patch('counts',d.id,{lines:c.lines});toast('اتحفظت الأرقام')}),
   postCount:(d,b)=>arm(b,()=>run(async()=>{
     const c=byId('counts',d.id);if(!c||c.status!=='open')return;
@@ -1969,7 +2012,7 @@ function arm(b,fn){if(b.dataset.armed){delete b.dataset.armed;fn();return}const 
 // action -> module it belongs to; ':view' opens a record (read allowed if the module is visible)
 const ACT_MOD={addSupplier:'suppliers',editSupplier:'suppliers:view',autoCodeSup:'suppliers',xlImportSup:'suppliers',xlImportItems:'inv',addWh:'wh',editWh:'wh:view',seedWh:'wh',addDept:'dept',editDept:'dept:view',seedDept:'dept',addItem:'inv',editItem:'inv:view',move:'inv',addRfq:'rfqs',rfqFromItem:'rfqs',openRfq:'rfqs:view',award:'rfqs',setFx:'rfqs',delQuote:'rfqs',cancelRfq:'rfqs',paste:'rfqs',invite:'rfqs',copyInvite:'rfqs',
   addPo:'pos',openPo:'pos:view',editPo:'pos',sendPo:'pos',cancelPo:'pos',approvePo:'approve',rejectPo:'approve',receive:'grn',grnNew:'grn',openGrn:'grn:view',inspect:'qa',issueNew:'issue',issueBranch:'issue',openIssue:'issue:view',editSale:'sales:view',
-  iretNew:'iret',openIret:'iret:view',rretNew:'rret',openRret:'rret:view',addShip:'ship',editShip:'ship',shipNext:'ship',openShip:'ship:view',settings:'admin',clearSample:'admin',setRole:'admin',delRole:'admin',addRole:'admin',dismissReq:'admin',exportXlsx:'reports',copyReport:'reports:view',openLedger:'inv:view',exportLedger:'reports',addCount:'count',openCount:'count:view',saveCount:'count',postCount:'count',cancelCount:'count'};
+  iretNew:'iret',openIret:'iret:view',rretNew:'rret',openRret:'rret:view',addShip:'ship',editShip:'ship',shipNext:'ship',openShip:'ship:view',settings:'admin',clearSample:'admin',setRole:'admin',delRole:'admin',addRole:'admin',dismissReq:'admin',exportXlsx:'reports',copyReport:'reports:view',openLedger:'inv:view',exportLedger:'reports',addCount:'count',openCount:'count:view',saveCount:'count',postCount:'count',cancelCount:'count',exportCountXlsx:'count:view'};
 const COL_MOD={suppliers:'suppliers',items:'inv',pos:'pos',shipments:'ship',warehouses:'wh',depts:'dept'};
 const actAllowed=(name,d)=>{let spec=name==='del'?COL_MOD[d.col]:ACT_MOD[name];if(!spec)return true;const[m,v]=spec.split(':');return v==='view'?(canSee(m)||canEditMod(m)):canEditMod(m)};
 document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(!b)return;const name=b.dataset.a,a=ACT[name];if(!a)return;
