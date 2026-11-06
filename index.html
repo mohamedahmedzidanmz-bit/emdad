@@ -1650,12 +1650,13 @@ function openCount(id){
     fi.addEventListener('change',async e=>{const f=e.target.files[0];if(!f)return;await run(()=>importCountFile(id,f));fi.value=''});
   });
 }
+function xlsxCode(v){v=String(v||'');return/^[1-9]\d*$/.test(v)?Number(v):v}
 async function exportCountXlsx(id){
   const c=byId('counts',id);if(!c)return;
   const blind=!canEditMod('approve');
   const X=await loadXLSX(),wb=X.utils.book_new();wb.Workbook={Views:[{RTL:true}]};
   const head=blind?['الكود','الصنف','الوحدة','العدد الفعلي']:['الكود','الصنف','الوحدة','رصيد النظام','العدد الفعلي'];
-  const rows=(c.lines||[]).map(x=>{const it=byId('items',x.itemId)||{};return blind?[it.sku||'',it.name||'',it.unit||'',x.actual??'']:[it.sku||'',it.name||'',it.unit||'',x.sys,x.actual??'']});
+  const rows=(c.lines||[]).map(x=>{const it=byId('items',x.itemId)||{};const sku=xlsxCode(it.sku);return blind?[sku,it.name||'',it.unit||'',x.actual??'']:[sku,it.name||'',it.unit||'',x.sys,x.actual??'']});
   const ws=X.utils.aoa_to_sheet([head,...rows]);ws['!cols']=head.map((h,i)=>({wch:i===1?30:14}));
   X.utils.book_append_sheet(wb,ws,'جرد');
   const help=X.utils.aoa_to_sheet([['تعليمات'],['املا عمود «العدد الفعلي» بالكمية اللي لقيتها فعليًا وقت العد، واحفظ الملف، وارجع ارفعه من شاشة الجرد.'],['متغيّرش عمود الكود — بيه بيتم ربط كل صف بالصنف الصح وقت الرفع.'],['سيب «العدد الفعلي» فاضي لأي صنف لسه ما اتعدش، وهيفضل زي ما هو.']]);
