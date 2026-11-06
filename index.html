@@ -1923,6 +1923,7 @@ let tt=0;function toast(m,k){const t=$('#toast');t.textContent=m;t.className='to
 
 /* ---------- actions ---------- */
 async function run(fn){try{await fn()}catch(e){console.error(e);toast(errMsg(e),'bad')}}
+const postingCounts=new Set(); // guards against posting the same جرد twice from a double/triple click before the status round-trips back
 const ACT={
   nav:d=>{if(!$('#drawer').hidden)closeDrawer();ui.home=false;ui.view=d.v;ui.q='';try{history.replaceState(null,'','#'+d.v)}catch(e){}render();window.scrollTo(0,0)},
   home:()=>{if(!$('#drawer').hidden)closeDrawer();ui.home=true;ui.q='';try{history.replaceState(null,'',location.pathname+location.search)}catch(e){}render();window.scrollTo(0,0)},
@@ -1961,11 +1962,14 @@ const ACT={
   addCount:()=>countForm(),openCount:d=>openCount(d.id),exportCountXlsx:(d,b)=>run(async()=>{b.disabled=true;try{await exportCountXlsx(d.id)}finally{b.disabled=false}}),
   saveCount:d=>run(async()=>{const c=byId('counts',d.id);if(!c)return;await patch('counts',d.id,{lines:c.lines});toast('اتحفظت الأرقام')}),
   postCount:(d,b)=>arm(b,()=>run(async()=>{
-    const c=byId('counts',d.id);if(!c||c.status!=='open')return;
-    const toPost=(c.lines||[]).filter(x=>x.actual!=null&&Math.round(((+x.actual)-(+x.sys||0))*1000)!==0);
-    for(const x of toPost){const diff=Math.round(((+x.actual)-(+x.sys||0))*1000)/1000;await addMovement(x.itemId,diff,'adjust',c.no,`جرد ${c.no}`)}
-    await patch('counts',d.id,{status:'posted',postedBy:me.id||'',postedAt:Date.now()},`اعتماد الجرد: ${toPost.length} صنف اتسوّى`);
-    toast(`اتعمد الجرد. ${toPost.length} صنف اتسوّى.`);openCount(d.id)
+    if(postingCounts.has(d.id))return;postingCounts.add(d.id);b.disabled=true;
+    try{
+      const c=byId('counts',d.id);if(!c||c.status!=='open')return;
+      const toPost=(c.lines||[]).filter(x=>x.actual!=null&&Math.round(((+x.actual)-(+x.sys||0))*1000)!==0);
+      for(const x of toPost){const diff=Math.round(((+x.actual)-(+x.sys||0))*1000)/1000;await addMovement(x.itemId,diff,'adjust',c.no,`جرد ${c.no}`)}
+      await patch('counts',d.id,{status:'posted',postedBy:me.id||'',postedAt:Date.now()},`اعتماد الجرد: ${toPost.length} صنف اتسوّى`);
+      toast(`اتعمد الجرد. ${toPost.length} صنف اتسوّى.`);openCount(d.id)
+    }finally{postingCounts.delete(d.id);b.disabled=false}
   })),
   cancelCount:(d,b)=>arm(b,()=>run(async()=>{await patch('counts',d.id,{status:'cancelled'});closeDrawer();toast('اتلغى الجرد')})),
   exportLedger:(d,b)=>run(async()=>{
