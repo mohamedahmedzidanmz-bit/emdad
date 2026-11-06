@@ -1,7 +1,7 @@
 // إمداد · service worker: makes the site installable and opens the last loaded version when offline.
 // Network first, so every update you upload shows up on the next open. Data calls to Supabase are never cached.
-const CACHE = 'emdad-shell-v1';
-const SHELL = ['./', './index.html', './config.js', './backend.js', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
+const CACHE = 'emdad-shell-v2';
+const SHELL = ['./', './index.html', './config.js', './backend.js', './supabase.js', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).catch(() => {}));
