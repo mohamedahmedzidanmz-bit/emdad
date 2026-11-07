@@ -428,12 +428,12 @@ tr.grp:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 <script>
 document.documentElement.dir='rtl';document.documentElement.lang='ar';
 const $=s=>document.querySelector(s);
-const COLS=['suppliers','items','rfqs','pos','inspections','shipments','movements','settings','grns','issues','rreturns','ireturns','roles','requests','warehouses','depts','counts','sales','revals','devices'];
+const COLS=['suppliers','items','rfqs','pos','inspections','shipments','movements','settings','grns','issues','rreturns','ireturns','roles','requests','warehouses','depts','counts','sales','revals','devices','bills','payments'];
 const DEFAULT_FORM_URL=(()=>{try{return new URL('quote-form.html',location.href).href}catch(e){return 'quote-form.html'}})();
 const S={};COLS.forEach(c=>S[c]=[]);
 const loaded=new Set();
 let db=null,mode='loading',canWrite=true;
-const ui={view:'dash',home:true,q:'',invTab:'items',invType:'all',qaTab:'pending',poFilter:'open',rfqFilter:'open',shipFilter:'active',issueKind:'all',period:'w7',actUser:'all',vm:{},fold:new Set()};
+const ui={view:'dash',home:true,q:'',invTab:'items',invType:'all',qaTab:'pending',poFilter:'open',rfqFilter:'open',shipFilter:'active',issueKind:'all',period:'w7',actUser:'all',billsTab:'bills',vm:{},fold:new Set()};
 
 /* ---------- identity & roles ---------- */
 let me={id:null,owner:false,editor:false},userNS=null,downloadsNS=null,drawerRO=false;const names={};
@@ -445,9 +445,10 @@ const ROLES={
   quality:{t:'الجودة',see:['dash','suppliers','grn','qa','inv','rret','wh','count','activity'],edit:['qa']},
   shipping:{t:'الشحن',see:['dash','inv','ship','sales','activity'],edit:['ship']},
   clerk:{t:'إدخال الاستلام والصرف',see:['dash','pos','grn','issue'],edit:['grn','issue']},
+  accountant:{t:'محاسب مالي',see:['dash','suppliers','bills','payments'],edit:['bills','payments']},
   viewer:{t:'متابعة فقط',see:'*',edit:[]}
 };
-const ASSIGNABLE=['manager','purchasing','warehouse','quality','shipping','clerk','viewer'];
+const ASSIGNABLE=['manager','purchasing','warehouse','quality','shipping','clerk','accountant','viewer'];
 function myRole(){if(mode!=='live')return'admin';if(me.owner||me.editor)return'admin';const r=me.id&&S.roles.find(x=>x.id===me.id);return r&&ROLES[r.role]&&r.role!=='admin'?r.role:null}
 const roleDef=()=>ROLES[myRole()]||{see:['dash'],edit:[]};
 function canSee(v){if(v==='users')return myRole()==='admin';const r=roleDef();return r.see==='*'||r.see.includes(v)}
@@ -491,7 +492,7 @@ const svg=p=>`<svg viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="eveno
 const PALETTE=['#B5473A','#A6611A','#2C8397','#475577','#814968','#C2185B','#1E8A5A','#7B57A6','#3B6FB6','#8D5A2B'];
 const hue=s=>{s=String(s||'');let h=0;for(const ch of s)h=(h*31+ch.codePointAt(0))>>>0;return PALETTE[h%PALETTE.length]};
 const avatar=u=>`<span class="o-av" style="background:${hue(u||'x')}" aria-hidden="true">${svg(IC.user)}</span>`;
-const CHAT_MOD={suppliers:'suppliers',items:'inv',rfqs:'rfqs',pos:'pos',grns:'grn',issues:'issue',rreturns:'rret',ireturns:'iret',shipments:'ship',inspections:'qa',warehouses:'wh',depts:'dept'};
+const CHAT_MOD={suppliers:'suppliers',items:'inv',rfqs:'rfqs',pos:'pos',grns:'grn',issues:'issue',rreturns:'rret',ireturns:'iret',shipments:'ship',inspections:'qa',warehouses:'wh',depts:'dept',bills:'bills',payments:'payments'};
 // Chatter: the record's hist trail as messages, plus a "log note" box that appends to the same trail.
 function histHtml(d){
   if(!d)return'';const col=[...HIST].find(c=>S[c].includes(d));
@@ -570,10 +571,11 @@ const deptNames=()=>{const a=S.depts.filter(d=>d.active!=='no').sort((x,y)=>Stri
 const deptByName=n=>S.depts.find(d=>d.name===n);
 const deptKind=n=>{const d=deptByName(n);return d?d.kind:'prod'};
 const deptNamesByKind=k=>S.depts.filter(d=>d.active!=='no'&&d.kind===k).sort((x,y)=>String(x.code).localeCompare(String(y.code))).map(d=>d.name);
-const RR_REASON={quality:'رفض جودة في الفحص',defect:'عيب ظهر بعد الاستلام',excess:'زيادة عن المطلوب',spec:'غير مطابق للمواصفات'};
+const RR_REASON={quality:'رفض جودة في الفحص',defect:'عيب ظهر بعد الاستلام',excess:'زيادة عن المطلوب',spec:'غير مطابق للمواصفات',mistake:'خطأ في تسجيل الاستلام'};
 const IR_REASON={surplus:'فائض عن الحاجة',wrong:'خطأ في الصرف',damaged:'تالف أثناء التشغيل',other:'أخرى'};
 const RR_ST={sent:['اتبعت للمورد','warn'],credited:['اتعمل إشعار خصم','ok']};
 const pendingRej=sid=>S.inspections.filter(x=>x.status==='done'&&(!sid||x.supplierId===sid)&&(+x.rejected||0)-(+x.returned||0)>1e-9);
+const pendingPreQc=sid=>S.inspections.filter(x=>x.status==='pending'&&(!sid||x.supplierId===sid));
 // ANSI/ASQ Z1.4, General Inspection Level II, single sampling normal, AQL 2.5: [max lot, sample n, accept no.]
 const AQL=[[8,5,0],[15,5,0],[25,5,0],[50,8,0],[90,13,1],[150,20,1],[280,32,2],[500,50,3],[1200,80,5],[3200,125,7],[10000,200,10],[35000,315,14],[150000,500,21],[500000,800,21],[Infinity,1250,21]];
 const aql=lot=>{lot=Math.max(1,Math.round(lot));const r=AQL.find(x=>lot<=x[0]);return{n:Math.min(lot,r[1]),ac:r[2]}};
@@ -604,7 +606,7 @@ function gradeHtml(g){if(!g)return`<span class="grade t-mute">—</span>`;return
 /* ---------- data layer ---------- */
 function localSet(col,id,data){const i=S[col].findIndex(x=>x.id===id);const rec=Object.assign({id},data);if(i>=0)S[col][i]=rec;else S[col].push(rec)}
 function errMsg(e){const c=e&&e.code;if(c==='invalid_argument')return'التعديل اترفض. غالبًا صلاحيتك على الصفحة دي قراءة بس.';if(c==='quota_exceeded')return'مساحة البيانات اتملت. امسح سجلات قديمة وجرّب تاني.';if(c==='resource_exhausted')return'طلبات كتير ورا بعض. استنى ثواني وجرّب تاني.';if(c==='unavailable')return'الاتصال اتقطع لحظيًا. جرّب تاني.';return(e&&e.message)||'حصل خطأ غير متوقع.'}
-const HIST=new Set(['suppliers','items','rfqs','pos','grns','issues','rreturns','ireturns','shipments','inspections','roles','warehouses','depts','counts','sales']);
+const HIST=new Set(['suppliers','items','rfqs','pos','grns','issues','rreturns','ireturns','shipments','inspections','roles','warehouses','depts','counts','sales','revals','devices','bills','payments']);
 async function put(col,id,data,act){
   const clean=strip(data),prev=byId(col,id),now=Date.now();
   if(!prev&&!clean.createdAt){clean.createdBy=me.id||'';clean.createdAt=now}
@@ -650,7 +652,9 @@ const VIEWS={
   dept:{t:'الأقسام والفروع',r:renderDept,g:'المخازن'},
   count:{t:'جرد المخزون',r:renderCounts,g:'المخازن'},
   sales:{t:'مبيعات الفروع',r:renderSales,g:'المخازن'},
-  reval:{t:'إعادة تقييم المخزون',r:renderReval,g:'المخازن'}
+  reval:{t:'إعادة تقييم المخزون',r:renderReval,g:'المخازن'},
+  bills:{t:'فواتير الموردين',r:renderBills,g:'الحسابات'},
+  payments:{t:'سداد الموردين',r:renderPayments,g:'الحسابات'}
 };
 const VIEW_MOD={dash:'',reports:'',activity:'',users:'admin'};
 const viewMod=v=>v in VIEW_MOD?VIEW_MOD[v]:v;
@@ -672,9 +676,10 @@ const APPS=[
   {k:'quality',t:'الجودة',v:['qa'],c:'#5B5FC7',i:'quality'},
   {k:'ship',t:'الشحن',v:['ship'],c:'#C27A12',i:'ship'},
   {k:'reports',t:'التقارير',v:['reports','activity'],c:'#2F6FB0',i:'reports'},
+  {k:'finance',t:'الحسابات المالية',v:['bills','payments'],c:'#8D5A2B',i:'money'},
   {k:'users',t:'الإعدادات',v:['users'],c:'#55606B',i:'users'}
 ];
-const MENU_T={dash:'نظرة عامة',rfqs:'طلبات عروض الأسعار',pos:'أوامر الشراء',suppliers:'الموردين',inv:'المنتجات',grn:'الاستلام',issue:'الصرف',rret:'مرتجعات لموردين',iret:'مرتجعات صرف',qa:'فحص الاستلام',ship:'الشحنات',reports:'تقارير الإدارة',activity:'سجل النشاط',users:'المستخدمين والصلاحيات',wh:'المخازن',dept:'الأقسام',count:'الجرد',sales:'مبيعات الفروع',reval:'إعادة التقييم'};
+const MENU_T={dash:'نظرة عامة',rfqs:'طلبات عروض الأسعار',pos:'أوامر الشراء',suppliers:'الموردين',inv:'المنتجات',grn:'الاستلام',issue:'الصرف',rret:'مرتجعات لموردين',iret:'مرتجعات صرف',qa:'فحص الاستلام',ship:'الشحنات',reports:'تقارير الإدارة',activity:'سجل النشاط',users:'المستخدمين والصلاحيات',wh:'المخازن',dept:'الأقسام',count:'الجرد',sales:'مبيعات الفروع',reval:'إعادة التقييم',bills:'فواتير الموردين',payments:'سداد الموردين'};
 const appOf=v=>APPS.find(a=>a.v.includes(v))||APPS[0];
 function homeHtml(ready){
   if(ready&&mode==='live'&&!myRole())return gateHtml();
@@ -879,7 +884,7 @@ function renderSuppliers(){
 function supplierForm(id){
   const s=id?byId('suppliers',id):{status:'approved',category:'raw',leadDays:14,terms:'30 يوم'};
   const st=id?supStats(id):null;
-  openDrawer(id?s.name:'مورد جديد',(st?(s.status==='blocked'?ribbon('موقوف','bad'):'')+smartRow([sb('purchase','أوامر الشراء',S.pos.filter(p=>p.supplierId===id).length,'pos',s.name,'poFilter:all'),sb('money','حجم التعامل',money(st.spend)),sb('quality','نسبة القبول',pct(st.quality),'qa',s.name,'qaTab:done'),sb('clock','المواعيد',pct(st.onTime)),sb('star','التقييم',st.grade||'—'),sb('inventory','أذون استلام',S.grns.filter(g=>g.supplierId===id).length,'grn',s.name)]):'')+`
+  openDrawer(id?s.name:'مورد جديد',(st?(s.status==='blocked'?ribbon('موقوف','bad'):'')+smartRow([sb('purchase','أوامر الشراء',S.pos.filter(p=>p.supplierId===id).length,'pos',s.name,'poFilter:all'),sb('money','حجم التعامل',money(st.spend)),sb('quality','نسبة القبول',pct(st.quality),'qa',s.name,'qaTab:done'),sb('clock','المواعيد',pct(st.onTime)),sb('star','التقييم',st.grade||'—'),sb('inventory','أذون استلام',S.grns.filter(g=>g.supplierId===id).length,'grn',s.name),canSee('bills')?`<button data-a="openSupplierLedger" data-id="${id}">${svg(IC.money)}<span><b>${money(supplierDue(id))}</b>المستحق له</span></button>`:sb('money','المستحق له',money(supplierDue(id)))]):'')+`
   <form class="main"><div class="fg">
     ${fld('اسم المورد','name',{value:s.name,req:true,full:true})}
     ${sel('الفئة','category',Object.entries(SUP_CAT),s.category)}
@@ -1038,8 +1043,9 @@ function settingsForm(){
     ${fld('لينك نموذج المورد','formUrl',{value:c.formUrl&&!localUrl(c.formUrl)?c.formUrl:'',full:true,attrs:`dir="ltr" placeholder="${esc(DEFAULT_FORM_URL)}"`,hint:'سيبه فاضي وهيستخدم النموذج اللي جنب البرنامج تلقائي. اكتب لينك هنا بس لو النموذج متستضاف في مكان تاني.'})}
     ${sel('إخفاء أرصدة المخزون عن غير المدراء','blindStock',[['no','لأ، كله شايف الأرصدة'],['yes','أيوه، اخفيها (فعّلها وقت الجرد)']],c.blindStock?'yes':'no',{full:true})}
     <p class="f full"><small>لما تفعّلها، أي حد مش من دوره الاعتماد (غير المدير/الإدارة) مش هيشوف أرقام الأرصدة في شاشة المخزون. فورمة إدخال الجرد نفسها دايمًا مخفي فيها رصيد النظام والفرق عن غير المدراء، سواء الخاصية دي مفعّلة أو لأ.</small></p>
+    ${fld('تسجيل الخروج التلقائي بعد (دقيقة)','idleMinutes',{value:c.idleMinutes||10,type:'number',full:true,attrs:'min="1" step="1"',hint:'لو حد سايب البرنامج فاتح من غير ما يستخدمه، البرنامج هيسجّل خروجه تلقائي بعد المدة دي ويطلب الإيميل والباسورد تاني. اكتب 0 لو مش عايز الخاصية دي.'})}
   </div>${formActions('احفظ')}</form>`,
-  async fd=>{const d=Object.fromEntries(fd);d.approvalLimit=Math.max(0,+d.approvalLimit||0);d.formUrl=String(d.formUrl||'').trim();if(d.formUrl===DEFAULT_FORM_URL||localUrl(d.formUrl))d.formUrl='';d.blindStock=d.blindStock==='yes';await put('settings','main',Object.assign({},strip(c),d));toast('اتحفظت الإعدادات')});
+  async fd=>{const d=Object.fromEntries(fd);d.approvalLimit=Math.max(0,+d.approvalLimit||0);d.formUrl=String(d.formUrl||'').trim();if(d.formUrl===DEFAULT_FORM_URL||localUrl(d.formUrl))d.formUrl='';d.blindStock=d.blindStock==='yes';d.idleMinutes=Math.max(0,+d.idleMinutes||0);await put('settings','main',Object.assign({},strip(c),d));toast('اتحفظت الإعدادات')});
 }
 
 /* ---------- POs ---------- */
@@ -1051,7 +1057,7 @@ function lineRow(l={},o={}){const it=l.itemId?byId('items',l.itemId):null;return
 function linesBlock(lines,o={}){const L=lines&&lines.length?lines:(o.empty?[]:[{}]);return`<div class="lh${o.np?' np':''}"><span>الصنف</span><span>الكمية</span>${o.np?'':`<span>${o.priceLbl||'سعر الوحدة'}</span>`}<span></span></div><div class="lines" id="lines" data-np="${o.np?1:''}">${L.map(l=>lineRow(l,o)).join('')}</div><div><button type="button" class="btn sm" data-a="addLine">+ ${o.addLbl||'سطر'}</button></div>${itemsDatalist()}`}
 function readLines(fd,np){const it=fd.getAll('li_item'),q=fd.getAll('li_qty'),p=fd.getAll('li_price');return it.map((x,i)=>({itemId:x,qty:+q[i]||0,price:np?0:(+p[i]||0)})).filter(l=>l.itemId&&l.qty>0)}
 function aggregate(lines){const m={};lines.forEach(l=>m[l.itemId]=(m[l.itemId]||0)+l.qty);return m}
-function stockShort(need){return Object.entries(need).filter(([id,q])=>(+(byId('items',id)||{}).onHand||0)<q-1e-9).map(([id,q])=>`${itemName(id)} (محتاج ${num(q,2)}، متاح ${num((byId('items',id)||{}).onHand,2)})`)}
+function stockShort(need){const hb=hideBalance();return Object.entries(need).filter(([id,q])=>(+(byId('items',id)||{}).onHand||0)<q-1e-9).map(([id,q])=>hb?`${itemName(id)} (الكمية مش متاحة)`:`${itemName(id)} (محتاج ${num(q,2)}، متاح ${num((byId('items',id)||{}).onHand,2)})`)}
 const linesSummary=L=>(L||[]).length?`${esc(itemName(L[0].itemId))}${L.length>1?`<span class="sub">+ ${L.length-1} صنف تاني</span>`:''}`:'—';
 // status a PO moves to when someone asks to send it: over the limit it waits for an approver, unless an approver sends it
 function sendTarget(p,val){
@@ -1166,7 +1172,7 @@ function grnForm(poId){
 }
 function openGrn(id){
   const g=byId('grns',id);if(!g)return;const ins=S.inspections.filter(x=>x.grn===g.no);const hb=hideBalance();
-  const rows=(g.lines||[]).map(l=>{const x=ins.find(i=>i.itemId===l.itemId);let st=chip('—','mute');if(x)st=x.status==='pending'?chip('منتظر فحص','warn'):chip(`مقبول ${num(x.accepted,2)}${x.rejected?` · مرفوض ${num(x.rejected,2)}`:''}`,x.rejected?'bad':'ok');return hb?`<tr><td>${esc(itemName(l.itemId))}</td><td class="num">${num(l.qty,2)} ${esc(itemUnit(l.itemId))}</td><td>${st}</td><td>${x&&x.status==='pending'?`<button class="btn sm pri w" data-a="inspect" data-id="${x.id}">افحص</button>`:''}</td></tr>`:`<tr><td>${esc(itemName(l.itemId))}</td><td class="num">${num(l.qty,2)} ${esc(itemUnit(l.itemId))}</td><td class="num">${money(l.price)}</td><td class="num">${money(l.qty*l.price)}</td><td>${st}</td><td>${x&&x.status==='pending'?`<button class="btn sm pri w" data-a="inspect" data-id="${x.id}">افحص</button>`:''}</td></tr>`});
+  const rows=(g.lines||[]).map(l=>{const x=ins.find(i=>i.itemId===l.itemId);let st=chip('—','mute');if(x)st=x.status==='pending'?chip('منتظر فحص','warn'):x.status==='cancelled'?chip('اتلغى قبل الفحص','mute'):chip(`مقبول ${num(x.accepted,2)}${x.rejected?` · مرفوض ${num(x.rejected,2)}`:''}`,x.rejected?'bad':'ok');return hb?`<tr><td>${esc(itemName(l.itemId))}</td><td class="num">${num(l.qty,2)} ${esc(itemUnit(l.itemId))}</td><td>${st}</td><td>${x&&x.status==='pending'?`<button class="btn sm pri w" data-a="inspect" data-id="${x.id}">افحص</button>`:''}</td></tr>`:`<tr><td>${esc(itemName(l.itemId))}</td><td class="num">${num(l.qty,2)} ${esc(itemUnit(l.itemId))}</td><td class="num">${money(l.price)}</td><td class="num">${money(l.qty*l.price)}</td><td>${st}</td><td>${x&&x.status==='pending'?`<button class="btn sm pri w" data-a="inspect" data-id="${x.id}">افحص</button>`:''}</td></tr>`});
   const rejPend=ins.some(x=>(+x.rejected||0)-(+x.returned||0)>0);
   openDrawer(`إذن استلام ${g.no}`,statusbar([['rec','مستلم'],['qc','تحت الفحص'],['done','مفحوص']],ins.some(x=>x.status==='pending')?'qc':ins.length?'done':'rec')+smartRow([...(g.poId?[sb('purchase','أمر الشراء',esc(g.poNo),'pos',g.poNo,'poFilter:all')]:[]),sb('quality','لوطات منتظرة فحص',ins.filter(x=>x.status==='pending').length,'qa','','qaTab:pending')])+`<div class="kv"><div><small>المورد</small><b>${esc(supName(g.supplierId))}</b></div><div><small>التاريخ</small><b>${g.date}</b></div><div><small>أمر الشراء</small><b>${g.poNo?code(g.poNo):'استلام مباشر'}</b></div><div><small>إذن تسليم المورد</small><b>${esc(g.dn||'—')}</b></div><div><small>اللوط</small><b>${code(g.lot)}</b></div>${g.expiry?`<div><small>تاريخ انتهاء الصلاحية</small><b>${daysBetween(today(),g.expiry)<0?chip(g.expiry+' (فاتت)','bad'):daysBetween(today(),g.expiry)<=7?chip(g.expiry,'warn'):g.expiry}</b></div>`:''}<div><small>المستلم</small><b>${esc(g.by||'—')}</b></div></div>
   <div class="panel">${tbl(hb?['الصنف',['الكمية','num'],'الفحص','']:['الصنف',['الكمية','num'],['سعر الوحدة','num'],['القيمة','num'],'الفحص',''],rows,'—')}</div>
@@ -1289,35 +1295,40 @@ function rreturnForm(supId){
   openDrawer('مرتجع لمورد',`<form class="main"><div class="fg">
     ${sel('المورد','supplierId',[['','اختار مورد'],...S.suppliers.map(s=>[s.id,s.name])],def,{full:true,req:true})}
     ${fld('تاريخ المرتجع','date',{type:'date',value:today(),req:true})}
-    ${sel('السبب','reason',Object.entries(RR_REASON),pendingRej(def).length?'quality':'defect')}
+    ${sel('السبب','reason',Object.entries(RR_REASON),pendingRej(def).length?'quality':pendingPreQc(def).length?'mistake':'defect')}
   </div>
   <h3 class="sec">من مرفوضات الفحص</h3><div id="rrRej"></div>
+  <h3 class="sec">استلام اتسجل غلط (لسه ما اتفحصش)</h3><p style="margin:0;color:var(--muted);font-size:13px">للوط لسه في انتظار فحص الجودة ومحتاج يتلغي (كود، كمية، أو صنف غلط). مفيش حاجة دخلت المخزون لسه، فمفيش خصم — بس بيتسجل كمرتجع بسببه عشان السجل يفضل كامل، واللوط بيتشال من قايمة انتظار الفحص.</p><div id="rrPre"></div>
   <h3 class="sec">من المخزون</h3><p style="margin:0;color:var(--muted);font-size:13px">لعيوب ظهرت بعد ما البضاعة دخلت المخزون. الكمية دي بتتخصم من الرصيد.</p>
   ${linesBlock([],{empty:true,priceLbl:'قيمة الوحدة',addLbl:'صنف من المخزون'})}
   <div class="fg">${area('ملاحظات / طريقة الإرجاع','notes','')}</div>
   ${formActions('سجّل المرتجع')}</form>`,
   async fd=>{
     const sid=fd.get('supplierId');if(!sid){toast('اختار المورد','bad');return false}
-    const lines=[],insUpd=[];
+    const lines=[],insUpd=[],insCancel=[];
     pendingRej(sid).forEach(x=>{const rem=x.rejected-(x.returned||0);const q=Math.min(rem,Math.max(0,+fd.get('rj_'+x.id)||0));if(q<=0)return;lines.push({itemId:x.itemId,qty:q,price:+x.price||+(byId('items',x.itemId)||{}).cost||0,src:'rejected',insId:x.id,lot:x.lot,ncr:x.ncr||''});insUpd.push([x.id,(+x.returned||0)+q])});
+    pendingPreQc(sid).forEach(x=>{if(!fd.get('pq_'+x.id))return;lines.push({itemId:x.itemId,qty:+x.qty||0,price:+x.price||0,src:'pending',insId:x.id,lot:x.lot,grn:x.grn});insCancel.push(x.id)});
     const stock=readLines(fd).map(l=>Object.assign(l,{src:'stock'}));
     const short=stockShort(aggregate(stock));if(short.length){toast('الرصيد مش كفاية: '+short.join('، '),'bad');return false}
     lines.push(...stock);if(!lines.length){toast('مفيش أصناف في المرتجع','bad');return false}
     const no=genNo('RRT');
     await put('rreturns',no,{no,date:fd.get('date'),supplierId:sid,reason:fd.get('reason'),notes:fd.get('notes'),lines,value:Math.round(sum(lines,l=>l.qty*l.price)*100)/100,status:'sent',ts:Date.now()});
     for(const[iid,r]of insUpd)await patch('inspections',iid,{returned:r},'إرجاع المرفوض بإذن '+no);
+    for(const iid of insCancel)await patch('inspections',iid,{status:'cancelled'},'إلغاء استلام غلط بمرتجع '+no);
     for(const[iid,q]of Object.entries(aggregate(stock)))await addMovement(iid,-q,'rreturn',no,supName(sid));
     toast(`اتسجل المرتجع ${no} بقيمة ${money(sum(lines,l=>l.qty*l.price))}`);
   },body=>{
-    const f=body.querySelector('form'),wrap=body.querySelector('#rrRej');body.querySelector('#lines').dataset.optional='1';
-    const draw=()=>{const P=pendingRej(f.supplierId.value);wrap.innerHTML=P.length?`<div class="lh rcv"><span>الصنف واللوط</span><span>لسه مارجعش</span><span>هيرجع دلوقتي</span></div><div class="lines" style="margin-top:8px">${P.map(x=>{const rem=x.rejected-(x.returned||0);return`<div class="line rcv"><span>${esc(itemName(x.itemId))}<span class="sub">${esc(x.lot)}${x.ncr?' · '+esc(x.ncr):''}</span></span><span class="code">${num(rem,2)}</span><input name="rj_${x.id}" type="text" inputmode="decimal" data-calc="1" value="${rem}" aria-label="الكمية المرتجعة"></div>`}).join('')}</div>`:`<p style="margin:0;color:var(--muted);font-size:13px">${f.supplierId.value?'مفيش مرفوضات معلقة عند المورد ده.':'اختار المورد الأول.'}</p>`};
+    const f=body.querySelector('form'),wrap=body.querySelector('#rrRej'),wrapPre=body.querySelector('#rrPre');body.querySelector('#lines').dataset.optional='1';
+    const draw=()=>{const sid=f.supplierId.value;const P=pendingRej(sid);wrap.innerHTML=P.length?`<div class="lh rcv"><span>الصنف واللوط</span><span>لسه مارجعش</span><span>هيرجع دلوقتي</span></div><div class="lines" style="margin-top:8px">${P.map(x=>{const rem=x.rejected-(x.returned||0);return`<div class="line rcv"><span>${esc(itemName(x.itemId))}<span class="sub">${esc(x.lot)}${x.ncr?' · '+esc(x.ncr):''}</span></span><span class="code">${num(rem,2)}</span><input name="rj_${x.id}" type="text" inputmode="decimal" data-calc="1" value="${rem}" aria-label="الكمية المرتجعة"></div>`}).join('')}</div>`:`<p style="margin:0;color:var(--muted);font-size:13px">${sid?'مفيش مرفوضات معلقة عند المورد ده.':'اختار المورد الأول.'}</p>`;
+      const Q=pendingPreQc(sid);wrapPre.innerHTML=Q.length?`<div class="lines" style="margin-top:8px">${Q.map(x=>`<label class="line rcv" style="align-items:center"><input type="checkbox" name="pq_${x.id}" value="1"><span>${esc(itemName(x.itemId))}<span class="sub">${esc(x.lot)} · ${esc(x.grn||x.poNo||'')}</span></span><span class="code">${num(x.qty,2)} ${esc(itemUnit(x.itemId))}</span></label>`).join('')}</div>`:`<p style="margin:0;color:var(--muted);font-size:13px">${sid?'مفيش استلام منتظر فحص عند المورد ده.':'اختار المورد الأول.'}</p>`;
+    };
     f.supplierId.addEventListener('change',draw);draw();
   });
 }
 function openRret(id){
   const r=byId('rreturns',id);if(!r)return;const[l,t]=RR_ST[r.status]||RR_ST.sent;
   openDrawer(`مرتجع ${r.no}`,statusbar([['sent','اتبعت للمورد'],['credited','إشعار خصم']],r.status==='credited'?'credited':'sent')+`<div class="kv"><div><small>المورد</small><b>${esc(supName(r.supplierId))}</b></div><div><small>التاريخ</small><b>${r.date}</b></div><div><small>السبب</small><b>${RR_REASON[r.reason]||'—'}</b></div><div><small>القيمة</small><b>${money(r.value)}</b></div><div><small>الحالة</small><b>${chip(l,t)}</b></div>${r.creditNo?`<div><small>إشعار الخصم</small><b>${code(r.creditNo)}</b></div>`:''}</div>
-  <div class="panel">${tbl(['الصنف','المصدر',['الكمية','num'],['قيمة الوحدة','num'],['القيمة','num']],(r.lines||[]).map(x=>`<tr><td>${esc(itemName(x.itemId))}${x.lot?`<span class="sub code">${esc(x.lot)}</span>`:''}</td><td>${x.src==='rejected'?chip('مرفوض في الفحص','warn'):chip('من المخزون','info')}</td><td class="num">${num(x.qty,2)} ${esc(itemUnit(x.itemId))}</td><td class="num">${money(x.price)}</td><td class="num">${money(x.qty*x.price)}</td></tr>`),'—')}</div>
+  <div class="panel">${tbl(['الصنف','المصدر',['الكمية','num'],['قيمة الوحدة','num'],['القيمة','num']],(r.lines||[]).map(x=>`<tr><td>${esc(itemName(x.itemId))}${x.lot?`<span class="sub code">${esc(x.lot)}</span>`:''}</td><td>${x.src==='rejected'?chip('مرفوض في الفحص','warn'):x.src==='pending'?chip('استلام غلط، ملغي قبل الفحص','mute'):chip('من المخزون','info')}</td><td class="num">${num(x.qty,2)} ${esc(itemUnit(x.itemId))}</td><td class="num">${money(x.price)}</td><td class="num">${money(x.qty*x.price)}</td></tr>`),'—')}</div>
   ${r.notes?`<div class="note"><span>${esc(r.notes)}</span></div>`:''}
   ${histHtml(r)}
   ${r.status!=='credited'?`<h3 class="sec w">سجّل إشعار الخصم من المورد</h3><form id="creditForm" class="w"><div class="fg">${fld('رقم إشعار الخصم','creditNo',{req:true,attrs:'dir="ltr"'})}${fld('التاريخ','creditDate',{type:'date',value:today()})}</div><div class="actions"><span></span><button class="btn pri" type="submit">اعتمد الإشعار</button></div></form>`:''}`,
@@ -1334,6 +1345,109 @@ function renderQa(){
   :`<section class="panel">${tbl(['رقم الفحص','التاريخ','المورد','الصنف','اللوط',['الكمية','num'],['العينة','num'],['عيوب ح/ج/ب','num'],['مقبول','num'],['مرفوض','num'],'القرار','NCR','الفاحص'],done.map(x=>{const[l,t]=QC_D[x.decision]||QC_D.accept;return`<tr><td>${code(x.no)}</td><td class="code">${x.inspectedAt||''}</td><td>${esc(supName(x.supplierId))}</td><td>${esc(itemName(x.itemId))}</td><td>${code(x.lot)}</td><td class="num">${num(x.qty,2)}</td><td class="num">${num(x.sample)}</td><td class="num code">${x.crit||0}/${x.major||0}/${x.minor||0}</td><td class="num">${num(x.accepted,2)}</td><td class="num">${num(x.rejected,2)}</td><td>${chip(l,t)}</td><td>${x.ncr?code(x.ncr):'—'}${x.rejected>0?((x.returned||0)>=x.rejected?chip('اترجع','ok'):chip('لسه عندك','warn')):''}</td><td>${whoH(x.inspectedBy)}</td></tr>`}),'لسه مفيش فحوصات مكتملة.')}</section>`;
   return head('توكيد الجودة','فحص الاستلام بخطة عينات ANSI Z1.4 (مستوى II، AQL 2.5).',seg('qaTab',[['pending','منتظر الفحص'],['done','سجل الفحوصات']])+(ui.qaTab==='done'?searchBox('لوط، مورد، NCR'):''))+kp+body;
 }
+
+/* ---------- accounts payable: supplier bills & payments ---------- */
+const BILL_ST={unpaid:['غير مسددة','bad'],partial:['مسددة جزئيًا','warn'],paid:['مسددة بالكامل','ok']};
+const PAY_METHOD={cash:'نقدي',bank:'تحويل بنكي',cheque:'شيك'};
+function billStatus(b){const paid=+b.paid||0,amt=+b.amount||0;return paid<=0?'unpaid':paid+0.01<amt?'partial':'paid'}
+function supplierDue(sid){return Math.round(sum(S.bills.filter(b=>b.supplierId===sid),b=>Math.max(0,(+b.amount||0)-(+b.paid||0)))*100)/100}
+function termsDays(terms){const m=String(terms||'').match(/\d+/);return m?+m[0]:0}
+// one bill per GRN: grows as each line on that receipt gets accepted in QA, matching the supplier's actual delivery note/invoice
+async function billForAcceptedInspection(x,acc){
+  const billId='BILL-'+(x.grn||x.no),prev=byId('bills',billId);
+  const lines=[...(prev&&prev.lines||[])];
+  const li=lines.findIndex(l=>l.insId===x.id);
+  const line={itemId:x.itemId,qty:acc,price:+x.price||0,insId:x.id};
+  if(li>=0)lines[li]=line;else lines.push(line);
+  const amount=Math.round(sum(lines,l=>l.qty*l.price)*100)/100;
+  const date=(prev&&prev.date)||x.date||today();
+  const dueDate=(prev&&prev.dueDate)||addDays(date,termsDays((byId('suppliers',x.supplierId)||{}).terms));
+  await put('bills',billId,Object.assign({},prev?strip(prev):{},{no:billId,supplierId:x.supplierId,grn:x.grn,poNo:x.poNo||'',date,dueDate,lines,amount,paid:(prev&&prev.paid)||0}),prev?`تحديث الفاتورة: ${itemName(x.itemId)} ×${num(acc,2)}`:'إنشاء فاتورة من الاستلام');
+}
+function renderBills(){
+  const totalDue=sum(S.bills,b=>Math.max(0,(+b.amount||0)-(+b.paid||0)));
+  const overdue=S.bills.filter(b=>billStatus(b)!=='paid'&&b.dueDate&&b.dueDate<today());
+  const tools=seg('billsTab',[['bills','الفواتير'],['balances','أرصدة الموردين']]);
+  if(ui.billsTab==='balances'){
+    const sids=[...new Set(S.bills.map(b=>b.supplierId))];
+    const rows=sids.map(sid=>({sid,due:supplierDue(sid),bills:S.bills.filter(b=>b.supplierId===sid).length,overdue:S.bills.filter(b=>b.supplierId===sid&&billStatus(b)!=='paid'&&b.dueDate&&b.dueDate<today()).length})).filter(x=>match(supName(x.sid))).sort((a,b)=>b.due-a.due);
+    const row=x=>`<tr class="click" data-a="openSupplierLedger" data-id="${x.sid}"><td><b>${esc(supName(x.sid))}</b></td><td class="num">${x.bills}</td><td class="num ${x.overdue?'':''}" style="${x.overdue?'color:var(--bad)':''}">${x.overdue||'—'}</td><td class="num"><b>${money(x.due)}</b></td></tr>`;
+    return head('فواتير الموردين','',tools+searchBox('اسم المورد'))+
+    `<div class="kpis"><div class="kpi ${totalDue?'warn':''}"><small>إجمالي المستحق للموردين</small><b>${money(totalDue)}</b><span>${sids.length} مورد عليهم فواتير</span></div><div class="kpi ${overdue.length?'bad':''}"><small>فواتير متأخرة السداد</small><b>${overdue.length}</b></div></div>
+    <section class="panel">${tbl(['المورد',['عدد الفواتير','num'],['متأخرة','num'],['الرصيد المستحق','num']],rows.map(row),'لسه مفيش موردين عليهم فواتير.',a=>money(sum(a,x=>x.due)))}</section>`;
+  }
+  const list=S.bills.map(b=>({b,st:billStatus(b)})).filter(({b})=>match(b.no,supName(b.supplierId),b.grn)).sort((a,b)=>(b.b.date||'').localeCompare(a.b.date||''));
+  const row=({b,st})=>{const[l,t]=BILL_ST[st];const rem=Math.max(0,(+b.amount||0)-(+b.paid||0));const late=st!=='paid'&&b.dueDate&&b.dueDate<today();return`<tr class="click" data-a="openBill" data-id="${b.id}"><td>${code(b.no)}</td><td>${esc(supName(b.supplierId))}</td><td class="code">${b.date}</td><td class="code">${late?chip(b.dueDate,'bad'):b.dueDate||'—'}</td><td class="num">${money(b.amount)}</td><td class="num">${money(b.paid||0)}</td><td class="num">${money(rem)}</td><td>${chip(l,t)}</td></tr>`};
+  return head('فواتير الموردين','بتتعمل تلقائي لما استلام يتقبل في فحص الجودة — فاتورة واحدة لكل إذن استلام، بتكبر كل ما صنف فيه يتفحص.',tools+searchBox('مورد، رقم فاتورة، أو إذن استلام'))+
+  `<div class="kpis"><div class="kpi ${totalDue?'warn':''}"><small>إجمالي المستحق للموردين</small><b>${money(totalDue)}</b><span>${S.bills.length} فاتورة</span></div><div class="kpi ${overdue.length?'bad':''}"><small>فواتير متأخرة السداد</small><b>${overdue.length}</b><span>فات ميعاد استحقاقها</span></div></div>
+  <section class="panel">${tbl(['رقم الفاتورة','المورد','التاريخ','الاستحقاق',['القيمة','num'],['المسدد','num'],['المتبقي','num'],'الحالة'],list.map(row),S.bills.length?'مفيش نتايج للبحث ده.':'<b>مفيش فواتير لسه</b>أي استلام يتقبل في فحص الجودة بيعمل فاتورة هنا تلقائي.')}</section>`;
+}
+function supplierLedgerRows(sid){
+  const bills=S.bills.filter(b=>b.supplierId===sid).map(b=>({date:b.date,type:'bill',ref:b.no,debit:+b.amount||0,credit:0,ts:b.ts||0}));
+  const pays=S.payments.filter(p=>p.supplierId===sid).map(p=>({date:p.date,type:'payment',ref:p.no,debit:0,credit:+p.amount||0,ts:p.ts||0}));
+  const rows=[...bills,...pays].sort((a,b)=>(a.date||'').localeCompare(b.date||'')||a.ts-b.ts);
+  let bal=0;return rows.map(r=>{bal=Math.round((bal+r.debit-r.credit)*100)/100;return Object.assign({},r,{bal})});
+}
+function openSupplierLedger(sid){
+  const s=byId('suppliers',sid);if(!s)return;
+  const rows=supplierLedgerRows(sid);
+  const tr=r=>`<tr><td class="code">${r.date}</td><td>${r.type==='bill'?'فاتورة':'سداد'}</td><td>${code(r.ref)}</td><td class="num" style="color:var(--bad)">${r.debit?money(r.debit):'—'}</td><td class="num" style="color:var(--ok)">${r.credit?money(r.credit):'—'}</td><td class="num"><b>${money(r.bal)}</b></td></tr>`;
+  openDrawer(`كشف حساب ${s.name}`,`<div class="kv"><div><small>الرصيد المستحق حاليًا</small><b class="big">${money(supplierDue(sid))}</b></div><div><small>عدد الفواتير</small><b>${S.bills.filter(b=>b.supplierId===sid).length}</b></div><div><small>عدد السدادات</small><b>${S.payments.filter(p=>p.supplierId===sid).length}</b></div></div>
+  <div class="panel">${tbl(['التاريخ','النوع','المرجع',['مدين (فاتورة)','num'],['دائن (سداد)','num'],['الرصيد','num']],rows.map(tr),'لسه مفيش حركات على المورد ده.')}</div>
+  <div class="actions"><span></span><button class="btn pri" data-a="paySupplier" data-id="${sid}">سدّد للمورد</button></div>`);
+}
+function openBill(id){
+  const b=byId('bills',id);if(!b)return;const st=billStatus(b),[l,t]=BILL_ST[st],rem=Math.max(0,(+b.amount||0)-(+b.paid||0));
+  openDrawer(`فاتورة ${b.no}`,`<div class="kv"><div><small>المورد</small><b>${esc(supName(b.supplierId))}</b></div><div><small>التاريخ</small><b>${b.date}</b></div><div><small>تاريخ الاستحقاق</small><b>${b.dueDate||'—'}</b></div><div><small>إذن الاستلام</small><b>${b.grn?code(b.grn):'—'}</b></div><div><small>القيمة</small><b>${money(b.amount)}</b></div><div><small>المسدد</small><b>${money(b.paid||0)}</b></div><div><small>المتبقي</small><b>${money(rem)}</b></div><div><small>الحالة</small><b>${chip(l,t)}</b></div></div>
+  <div class="panel">${tbl(['الصنف',['الكمية','num'],['سعر الوحدة','num'],['القيمة','num']],(b.lines||[]).map(x=>`<tr><td>${esc(itemName(x.itemId))}</td><td class="num">${num(x.qty,2)} ${esc(itemUnit(x.itemId))}</td><td class="num">${money(x.price)}</td><td class="num">${money(x.qty*x.price)}</td></tr>`),'—')}</div>
+  ${histHtml(b)}
+  ${rem>0?`<div class="actions"><span></span><button class="btn pri" data-a="paySupplier" data-id="${b.supplierId}">سدّد للمورد</button></div>`:''}`);
+}
+function renderPayments(){
+  const list=[...S.payments].filter(p=>match(p.no,supName(p.supplierId),p.ref)).sort((a,b)=>(b.ts||0)-(a.ts||0));
+  const row=p=>`<tr class="click" data-a="openPayment" data-id="${p.id}"><td>${code(p.no)}</td><td>${esc(supName(p.supplierId))}</td><td class="code">${p.date}</td><td>${PAY_METHOD[p.method]||p.method}</td><td class="num">${money(p.amount)}</td><td>${whoH(p.createdBy)}</td></tr>`;
+  return head('سداد الموردين','سجّل دفعة لمورد، وهتتوزع تلقائي على أقدم فواتيره المستحقة.',searchBox('مورد، رقم سداد، أو مرجع')+`<button class="btn pri w" data-a="paySupplier">سداد جديد</button>`)+
+  `<section class="panel">${tbl(['رقم السداد','المورد','التاريخ','الطريقة',['المبلغ','num'],'بواسطة'],list.map(row),S.payments.length?'مفيش نتايج للبحث ده.':'<b>مفيش سدادات لسه</b>سجّل أول سداد لمورد من هنا.')}</section>`;
+}
+function paySupplierForm(sid){
+  if(!S.suppliers.length){toast('أضف مورد الأول','bad');return}
+  openDrawer('سداد لمورد',`<form class="main"><div class="fg">
+    ${sel('المورد','supplierId',[['','اختار مورد'],...S.suppliers.map(s=>[s.id,`${s.name} · مستحق ${money(supplierDue(s.id))}`])],sid||'',{full:true,req:true})}
+    ${fld('تاريخ السداد','date',{type:'date',value:today(),req:true})}
+    ${fld('المبلغ (ج.م)','amount',{type:'text',attrs:'inputmode="decimal" data-calc="1"',req:true,full:true,hint:'هيتوزع تلقائي على أقدم فواتير المورد ده المستحقة، الأقرب لتاريخ الاستحقاق الأول.'})}
+    ${sel('طريقة السداد','method',Object.entries(PAY_METHOD),'bank')}
+    ${fld('رقم مرجعي (شيك/تحويل)','ref',{attrs:'dir="ltr"'})}
+  </div>
+  <div id="payBills"></div>
+  <div class="fg">${area('ملاحظات','notes','')}</div>
+  ${formActions('سجّل السداد')}</form>`,
+  async fd=>{
+    const psid=fd.get('supplierId');if(!psid){toast('اختار المورد','bad');return false}
+    const amt=toNum(fd.get('amount'));if(!(amt>0)){toast('اكتب مبلغ أكبر من صفر','bad');return false}
+    const due=supplierDue(psid);if(amt>due+0.01){toast(`المبلغ أكبر من المستحق على المورد ده (${money(due)})`,'bad');return false}
+    const open=S.bills.filter(b=>b.supplierId===psid&&billStatus(b)!=='paid').sort((a,b)=>(a.dueDate||a.date||'').localeCompare(b.dueDate||b.date||''));
+    let left=amt;const alloc=[];
+    for(const b of open){if(left<=0)break;const rem=Math.max(0,(+b.amount||0)-(+b.paid||0));const take=Math.round(Math.min(rem,left)*100)/100;if(take<=0)continue;alloc.push([b.id,take]);left=Math.round((left-take)*100)/100}
+    const no=genNo('PAY');
+    await put('payments',no,{no,date:fd.get('date'),supplierId:psid,amount:amt,method:fd.get('method'),ref:fd.get('ref'),notes:fd.get('notes'),alloc,ts:Date.now()});
+    for(const[bid,take]of alloc){const b=byId('bills',bid);await patch('bills',bid,{paid:Math.round(((+b.paid||0)+take)*100)/100},`سداد ${money(take)} بإذن ${no}`)}
+    toast(`اتسجل السداد ${no} بمبلغ ${money(amt)}`);
+  },body=>{
+    const f=body.querySelector('form'),wrap=body.querySelector('#payBills');
+    const draw=()=>{const psid=f.supplierId.value;if(!psid){wrap.innerHTML='';return}
+      const open=S.bills.filter(b=>b.supplierId===psid&&billStatus(b)!=='paid').sort((a,b)=>(a.dueDate||a.date||'').localeCompare(b.dueDate||b.date||''));
+      wrap.innerHTML=open.length?`<h3 class="sec">فواتير المورد المستحقة (هتتسدد بالأقدم استحقاقًا الأول)</h3><div class="panel">${tbl(['الفاتورة','الاستحقاق',['المتبقي','num']],open.map(b=>`<tr><td>${code(b.no)}</td><td class="code">${b.dueDate||'—'}</td><td class="num">${money(Math.max(0,(+b.amount||0)-(+b.paid||0)))}</td></tr>`),'')}</div>`:`<p style="margin:0;color:var(--muted);font-size:13px">مفيش فواتير مستحقة للمورد ده.</p>`};
+    f.supplierId.addEventListener('change',draw);draw();
+  });
+}
+function openPayment(id){
+  const p=byId('payments',id);if(!p)return;
+  openDrawer(`سداد ${p.no}`,`<div class="kv"><div><small>المورد</small><b>${esc(supName(p.supplierId))}</b></div><div><small>التاريخ</small><b>${p.date}</b></div><div><small>الطريقة</small><b>${PAY_METHOD[p.method]||p.method}</b></div><div><small>المرجع</small><b>${esc(p.ref||'—')}</b></div><div><small>المبلغ</small><b>${money(p.amount)}</b></div></div>
+  <div class="panel">${tbl(['الفاتورة',['المبلغ المخصص','num']],(p.alloc||[]).map(([bid,amt])=>{const b=byId('bills',bid);return`<tr><td>${b?code(b.no):bid}</td><td class="num">${money(amt)}</td></tr>`}),'—')}</div>
+  ${p.notes?`<div class="note"><span>${esc(p.notes)}</span></div>`:''}
+  ${histHtml(p)}`);
+}
+
 function inspectForm(id){
   const x=byId('inspections',id);if(!x)return;const a=aql(x.qty);const it=byId('items',x.itemId);
   openDrawer(`فحص لوط ${x.lot}`,`<div class="kv"><div><small>الصنف</small><b>${esc(itemName(x.itemId))}</b></div><div><small>المورد</small><b>${esc(supName(x.supplierId))}</b></div><div><small>حجم اللوط</small><b>${num(x.qty,2)} ${esc(itemUnit(x.itemId))}</b></div><div><small>إذن الاستلام</small><b>${code(x.grn||x.poNo)}</b></div>${x.expiry?`<div><small>تاريخ انتهاء الصلاحية</small><b>${daysBetween(today(),x.expiry)<0?chip(x.expiry+' (فاتت)','bad'):daysBetween(today(),x.expiry)<=7?chip(x.expiry,'warn'):x.expiry}</b></div>`:''}</div>
@@ -1354,7 +1468,7 @@ function inspectForm(id){
     const d=Object.fromEntries(fd);let acc=Math.min(x.qty,Math.max(0,+d.accepted||0));if(d.decision==='reject')acc=0;const rej=Math.round((x.qty-acc)*1000)/1000;
     const ncr=rej>0?genNo('NCR'):'';
     await patch('inspections',id,{status:'done',sample:+d.sample,crit:+d.crit||0,major:+d.major||0,minor:+d.minor||0,specsMatch:d.specsMatch||'',decision:d.decision,accepted:acc,rejected:rej,notes:d.notes,ncr,inspectedAt:today(),inspectedBy:me.id||''},`فحص: ${QC_D[d.decision][0]} · مقبول ${num(acc,2)}${rej?' · مرفوض '+num(rej,2):''}${d.specsMatch==='no'?' · مش مطابق للمواصفات':''}`);
-    if(acc>0){const it=byId('items',x.itemId);const oh=Math.max(0,+it.onHand||0);const cost=x.price?Math.round(((oh*(+it.cost||0))+acc*x.price)/(oh+acc)*100)/100:it.cost;await addMovement(x.itemId,acc,'receipt',x.no,`لوط ${x.lot}${x.expiry?' · صلاحية حتى '+x.expiry:''}`,{cost})}
+    if(acc>0){const it=byId('items',x.itemId);const oh=Math.max(0,+it.onHand||0);const cost=x.price?Math.round(((oh*(+it.cost||0))+acc*x.price)/(oh+acc)*100)/100:it.cost;await addMovement(x.itemId,acc,'receipt',x.no,`لوط ${x.lot}${x.expiry?' · صلاحية حتى '+x.expiry:''}`,{cost});await billForAcceptedInspection(x,acc)}
     toast(acc>0?`دخل المخزون ${num(acc,2)} ${itemUnit(x.itemId)}${ncr?` · اتفتح ${ncr}`:''}`:`اللوط اترفض · اتفتح ${ncr}`);
   },body=>{
     const f=body.querySelector('form'),h=body.querySelector('#qcHint');
@@ -2106,6 +2220,10 @@ const ACT={
   })),
   openReval:d=>openReval(d.id),
   exportRevalXlsx:(d,b)=>run(async()=>{b.disabled=true;try{await exportRevalXlsx()}finally{b.disabled=false}}),
+  openBill:d=>openBill(d.id),
+  paySupplier:d=>paySupplierForm(d&&d.id),
+  openPayment:d=>openPayment(d.id),
+  openSupplierLedger:d=>openSupplierLedger(d.id),
   exportLedger:(d,b)=>run(async()=>{
     const i=byId('items',d.id);if(!i)return;const rows=ledgerRows(d.id);
     b.disabled=true;const t=b.textContent;b.textContent='بنجهّز الملف…';
@@ -2154,7 +2272,7 @@ function arm(b,fn){if(b.dataset.armed){delete b.dataset.armed;fn();return}const 
 // action -> module it belongs to; ':view' opens a record (read allowed if the module is visible)
 const ACT_MOD={addSupplier:'suppliers',editSupplier:'suppliers:view',autoCodeSup:'suppliers',xlImportSup:'suppliers',xlImportItems:'inv',addWh:'wh',editWh:'wh:view',seedWh:'wh',addDept:'dept',editDept:'dept:view',seedDept:'dept',addItem:'inv',editItem:'inv:view',move:'inv',addRfq:'rfqs',rfqFromItem:'rfqs',openRfq:'rfqs:view',award:'rfqs',setFx:'rfqs',delQuote:'rfqs',cancelRfq:'rfqs',paste:'rfqs',invite:'rfqs',copyInvite:'rfqs',
   addPo:'pos',openPo:'pos:view',editPo:'pos',sendPo:'pos',cancelPo:'pos',approvePo:'approve',rejectPo:'approve',receive:'grn',grnNew:'grn',openGrn:'grn:view',inspect:'qa',issueNew:'issue',issueBranch:'issue',openIssue:'issue:view',editSale:'sales:view',
-  iretNew:'iret',openIret:'iret:view',rretNew:'rret',openRret:'rret:view',addShip:'ship',editShip:'ship',shipNext:'ship',openShip:'ship:view',settings:'admin',clearSample:'admin',setRole:'admin',delRole:'admin',addRole:'admin',dismissReq:'admin',approveDevice:'admin',exportXlsx:'reports',copyReport:'reports:view',openLedger:'inv:view',exportLedger:'reports',addCount:'count',openCount:'count:view',saveCount:'count',postCount:'count',cancelCount:'count',exportCountXlsx:'count:view',applyRevalPct:'reval',postReval:'reval',openReval:'reval:view',exportRevalXlsx:'reval:view'};
+  iretNew:'iret',openIret:'iret:view',rretNew:'rret',openRret:'rret:view',addShip:'ship',editShip:'ship',shipNext:'ship',openShip:'ship:view',settings:'admin',clearSample:'admin',setRole:'admin',delRole:'admin',addRole:'admin',dismissReq:'admin',approveDevice:'admin',exportXlsx:'reports',copyReport:'reports:view',openLedger:'inv:view',exportLedger:'reports',addCount:'count',openCount:'count:view',saveCount:'count',postCount:'count',cancelCount:'count',exportCountXlsx:'count:view',applyRevalPct:'reval',postReval:'reval',openReval:'reval:view',exportRevalXlsx:'reval:view',openBill:'bills:view',paySupplier:'payments',openPayment:'payments:view',openSupplierLedger:'bills:view'};
 const COL_MOD={suppliers:'suppliers',items:'inv',pos:'pos',shipments:'ship',warehouses:'wh',depts:'dept'};
 const actAllowed=(name,d)=>{let spec=name==='del'?COL_MOD[d.col]:ACT_MOD[name];if(!spec)return true;const[m,v]=spec.split(':');return v==='view'?(canSee(m)||canEditMod(m)):canEditMod(m)};
 document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(!b)return;const name=b.dataset.a,a=ACT[name];if(!a)return;
@@ -2218,7 +2336,22 @@ async function boot(){
   c.use('downloads').then(d=>{downloadsNS=d}).catch(()=>{});
   COLS.forEach(col=>{db.collection(col).onSnapshot(snap=>{S[col]=snap.docs.map(d=>Object.assign({id:d.id},d.data()));loaded.add(col);schedule()},err=>{loaded.add(col);schedule();toast('الاتصال بالبيانات وقف. اعمل ريفريش للصفحة.','bad')})});
   render();
+  idleTick();
 }
+// auto sign-out after N minutes of no mouse/keyboard/touch activity, so a logged-in session left open
+// on a shared machine doesn't stay usable — re-asks for the real email+password on the next open.
+let idleTimer=null;
+function idleTick(){
+  clearTimeout(idleTimer);
+  if(mode!=='live')return;
+  const mins=+cfg().idleMinutes;
+  if(!mins||mins<=0)return;
+  idleTimer=setTimeout(async()=>{
+    try{await window.emdadSupabase.auth.signOut()}catch(e){}
+    location.reload();
+  },mins*60000);
+}
+['mousemove','keydown','mousedown','touchstart','scroll'].forEach(ev=>document.addEventListener(ev,idleTick,{passive:true}));
 boot();
 </script>
 
