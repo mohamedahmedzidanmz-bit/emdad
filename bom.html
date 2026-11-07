@@ -119,6 +119,9 @@ input.in.bad{border-color:var(--bad);background:var(--bad-soft)}
 .kv div:last-child{border-bottom:0}
 .kv b{font-variant-numeric:tabular-nums}
 .big{font-size:22px}
+.lines tr.stg td{background:var(--accent-soft);font-weight:700;padding:8px 10px}
+.lines tr.stg-add td{padding:4px 10px 10px;border-bottom:1px solid var(--line)}
+.bar-s{flex-basis:100%;height:4px;border-radius:2px;background:linear-gradient(to left,var(--accent) var(--w),var(--soft) var(--w))}
 @media (prefers-reduced-motion:no-preference){.btn,.chip,tr.click td{transition:background .12s}}
 </style>
 
@@ -197,6 +200,11 @@ const autoConv=(stockU,lineU)=>{const a=normU(stockU),b=normU(lineU);if(!b||a===
 const lineConv=l=>{const it=byId('items',l.itemId);if(!it)return 1;return autoConv(it.unit,l.unit)||n(l.conv)||1};
 const needsConv=l=>{const it=byId('items',l.itemId);return !!it&&autoConv(it.unit,l.unit)===null};
 const lineNeed=l=>n(l.qty)*(1+n(l.scrap)/100)/lineConv(l); // in stock units
+/* stages: one product can be dough only, dough + filling, or dough + filling + finish. Each line carries its stage;
+   lines saved before stages existed fall back to packing (packaging items) or dough. */
+const STAGES=[['dough','العجن والخبز','عجن'],['filling','الحشو','حشو'],['finish','الفينش والتوبنج','فينش'],['pack','التعبئة','تعبئة']];
+const lineStage=l=>l.stage||(byId('items',l.itemId)?.type==='packaging'?'pack':'dough');
+const prodStages=b=>{const s=new Set((b.lines||[]).filter(l=>l.itemId).map(lineStage));return STAGES.filter(([k])=>k!=='pack'&&s.has(k))};
 function bomCost(b,seen=new Set()){ // cost of one batch; semi-finished lines use their own approved BOM's unit cost when they have one
   let total=0;const rows=(b.lines||[]).map(l=>{const it=byId('items',l.itemId);let uc=n(it?.cost);
     const sub=it&&activeBom(it.id);if(sub&&!seen.has(sub.id)){const s2=new Set(seen);s2.add(b.id);uc=bomCost(sub,s2).unit}
@@ -252,6 +260,7 @@ function bomList(){
   const rows=list.map(({b,it})=>{const c=bomCost(b);return`<tr class="click" data-open="${esc(b.id)}" tabindex="0">
     <td><span class="code">${esc(b.code)}</span></td>
     <td>${esc(it?.name||'صنف مش موجود')}${sampleTag(b)}<span class="sub">${esc(ITEM_T[it?.type]||'')}</span></td>
+    <td>${prodStages(b).map(s=>s[2]).join(' + ')||'—'}</td>
     <td class="num">v${b.version}</td>
     <td class="num">${fmt(b.yieldQty)} ${esc(it?.unit||'')}</td>
     <td class="num">${(b.lines||[]).length}</td>
@@ -263,7 +272,7 @@ function bomList(){
   ${hasSample()?`<div class="note">البيانات اللي عليها علامة «مثال» تجريبية عشان تشوف البرنامج شغال إزاي. <button class="lnk" data-act="clearSample">امسح بيانات المثال</button></div>`:''}
   <div class="stat"><div><b>${S.boms.length}</b><span>قوائم مواد</span></div><div><b>${appr.length}</b><span>معتمدة</span></div><div><b>${prods}</b><span>منتجات ليها قائمة معتمدة</span></div><div><b>${money(avg)}</b><span>متوسط تكلفة الوحدة (ج.م)</span></div></div>
   <div class="chips" role="group" aria-label="فلتر الحالة">${[['','الكل'],['approved','معتمدة'],['draft','مسودة'],['archived','مؤرشفة']].map(([k,l])=>`<button class="chip" data-fst="${k}" aria-pressed="${fSt===k}">${l}</button>`).join('')}</div>
-  <section class="panel">${list.length?`<div class="scroll"><table><thead><tr><th>الكود</th><th>المنتج</th><th class="num">النسخة</th><th class="num">ناتج الباتش</th><th class="num">مكونات</th><th class="num">تكلفة الوحدة</th><th>الحالة</th></tr></thead><tbody>${rows}</tbody></table></div>`
+  <section class="panel">${list.length?`<div class="scroll"><table><thead><tr><th>الكود</th><th>المنتج</th><th>المراحل</th><th class="num">النسخة</th><th class="num">ناتج الباتش</th><th class="num">مكونات</th><th class="num">تكلفة الوحدة</th><th>الحالة</th></tr></thead><tbody>${rows}</tbody></table></div>`
     :`<div class="empty"><b>${S.boms.length?'مفيش نتايج':'مفيش قوائم مواد لسه'}</b>${S.boms.length?'جرّب كلمة تانية أو شيل الفلتر.':(S.items.length?'دوس «قائمة جديدة» واختار المنتج ومكوناته.':'ابدأ من «الأصناف»: استورد ملف الأصناف من Excel، وبعدين اعمل أول قائمة.')}</div>`}</section>`;
 }
 
@@ -273,13 +282,13 @@ function bomForm(id){
   if(!draft||draft._for!==id){
     const b=isNew?null:byId('boms',id);
     if(!isNew&&!b){view.id=null;return bomList()}
-    draft=b?JSON.parse(JSON.stringify(b)):{itemId:'',version:1,status:'draft',yieldQty:1,notes:'',lines:[{itemId:'',qty:'',scrap:0}]};
+    draft=b?JSON.parse(JSON.stringify(b)):{itemId:'',version:1,status:'draft',yieldQty:1,notes:'',lines:[{itemId:'',qty:'',scrap:0,stage:'dough'}]};
     draft._for=id;
   }
   const d=draft,it=byId('items',d.itemId),locked=d.status!=='draft'&&!isNew;
   const c=bomCost(Object.assign({id:'_d'},d));
   const vers=it?bomsOf(it.id):[];
-  const lines=d.lines.map((l,k)=>{const li=byId('items',l.itemId),row=c.rows[k],lu=l.unit||li?.unit||'',cv=lineConv(l);
+  const lineRow=(l,k)=>{const li=byId('items',l.itemId),row=c.rows[k],lu=l.unit||li?.unit||'',cv=lineConv(l);
     const conv=li&&needsConv(l)?`<span class="sub">1 ${esc(li.unit)} = ${locked?fmt(l.conv,4):`<input class="in num li-conv" id="li-conv-${k}" inputmode="decimal" data-k="${k}" value="${esc(l.conv||'')}" style="width:70px;padding:3px 6px" aria-label="تحويل الوحدة">`} ${esc(lu)}</span>`:'';
     const eq=li&&cv!==1&&n(l.qty)?`<span class="sub">= ${fmt(n(l.qty)/cv,4)} ${esc(li.unit)}</span>`:'';
     return`<tr>
@@ -289,9 +298,18 @@ function bomForm(id){
     <td class="num w-n">${locked?fmt(l.scrap):`<input class="in num li-scrap" id="li-scrap-${k}" inputmode="decimal" data-k="${k}" value="${esc(l.scrap)}" aria-label="هالك ٪">`}</td>
     <td class="num">${money(row?.uc)}${li?`<span class="sub">لكل ${esc(li.unit)}</span>`:''}</td>
     <td class="num">${money(row?.c)}</td>
-    <td>${locked?'':`<button class="x" data-act="rmLine" data-k="${k}" aria-label="شيل السطر">✕</button>`}</td></tr>`}).join('');
+    <td>${locked?'':`<button class="x" data-act="rmLine" data-k="${k}" aria-label="شيل السطر">✕</button>`}</td></tr>`};
+  const stageCost={};d.lines.forEach((l,k)=>{const s=lineStage(l);stageCost[s]=(stageCost[s]||0)+(c.rows[k]?.c||0)});
+  const pct=v=>c.total?Math.round(v/c.total*100)+'%':'';
+  const ps=prodStages(d);
+  const lines=STAGES.map(([sk,sl,ss])=>{
+    const idx=d.lines.map((l,k)=>[l,k]).filter(([l])=>lineStage(l)===sk);
+    if(locked&&!idx.some(([l])=>l.itemId))return'';
+    return`<tr class="stg"><td colspan="5">${sl}${idx.length?'':'<span class="hint"> · مفيش، لو المنتج ملوش المرحلة دي سيبها فاضية</span>'}</td><td class="num">${idx.length?money(stageCost[sk]):''}<span class="sub">${idx.length?pct(stageCost[sk]||0):''}</span></td><td></td></tr>`
+      +idx.map(([l,k])=>lineRow(l,k)).join('')
+      +(locked?'':`<tr class="stg-add"><td colspan="7"><button class="lnk" data-act="addLine" data-stage="${sk}">+ مكوّن لل${ss}</button></td></tr>`)}).join('');
   return `<div class="crumb"><button data-act="back">قوائم المواد</button> / ${isNew?'جديدة':esc(d.code)}</div>
-  <div class="bar"><h1>${isNew?'قائمة مواد جديدة':esc(it?.name||d.code)}</h1>${isNew?'':`<span class="pill p-${d.status}">${ST[d.status]}</span>`}<span class="grow"></span>
+  <div class="bar"><h1>${isNew?'قائمة مواد جديدة':esc(it?.name||d.code)}</h1>${isNew?'':`<span class="pill p-${d.status}">${ST[d.status]}</span>`}${ps.length?`<span class="pill p-draft">${ps.length===1?'مرحلة واحدة':ps.length===2?'مرحلتين':'3 مراحل'}</span>`:''}<span class="grow"></span>
     ${locked?`<button class="btn" data-act="newVersion">نسخة جديدة للتعديل</button>${d.status==='approved'?'<button class="btn" data-act="toCalc">احسب احتياج</button><button class="btn" data-act="archive">أرشفة</button>':''}`
       :`<button class="btn pri" data-act="saveBom">احفظ</button>${isNew?'':'<button class="btn" data-act="approve">اعتمد</button>'}`}
     ${isNew?'':'<button class="btn bad" data-act="delBom">امسح</button>'}</div>
@@ -303,12 +321,13 @@ function bomForm(id){
         <label>النسخة<span style="font-weight:400" class="code">v${isNew?(it?(bomsOf(it.id)[0]?.version||0)+1:1):d.version}${d.code?' · '+esc(d.code):''}</span></label>
         <label class="full">ملاحظات التصنيع${locked?`<span style="font-weight:400">${esc(d.notes||'—')}</span>`:`<textarea class="in" id="f-notes" rows="2" placeholder="درجة الحرارة، وقت الخبز، ترتيب الخلط…">${esc(d.notes)}</textarea>`}</label>
       </div></section>
-      <section class="panel"><div class="panel-h"><h2>المكونات</h2><span class="grow"></span>${locked?'':'<button class="btn" data-act="addLine">سطر جديد</button>'}</div>
+      <section class="panel"><div class="panel-h"><h2>المكونات حسب المرحلة</h2><span class="grow"></span><span class="hint">حشوة أو توبنج بيستخدم في أكتر من منتج؟ اعمله صنف نصف مصنّع بقايمة لوحده، وحطه هنا كمكوّن.</span></div>
         <div class="scroll"><table class="lines"><thead><tr><th>الصنف</th><th class="num">الكمية</th><th>الوحدة</th><th class="num">هالك ٪</th><th class="num">سعر الوحدة</th><th class="num">التكلفة</th><th></th></tr></thead>
         <tbody>${lines}</tbody><tfoot><tr><td colspan="5">إجمالي تكلفة الباتش</td><td class="num">${money(c.total)}</td><td></td></tr></tfoot></table></div></section>
     </div>
     <aside style="display:flex;flex-direction:column;gap:14px;min-width:0">
       <section class="panel kv"><div><span>تكلفة الباتش</span><b>${money(c.total)}</b></div><div><span>ناتج الباتش</span><b>${fmt(d.yieldQty)} ${esc(it?.unit||'')}</b></div><div><span>تكلفة ${esc(it?.unit||'الوحدة')}</span><b class="big">${money(c.unit)}</b></div>${it&&n(it.cost)?`<div><span>التكلفة المسجلة للصنف</span><b>${money(it.cost)}</b></div>`:''}</section>
+      ${c.total?`<section class="panel"><div class="panel-h"><h2>التكلفة حسب المرحلة</h2></div><div class="kv">${STAGES.filter(([k])=>stageCost[k]).map(([k,l])=>`<div style="flex-wrap:wrap"><span>${l}</span><b>${money(stageCost[k]/(n(d.yieldQty)||1))} <span class="hint">للوحدة · ${pct(stageCost[k])}</span></b><i class="bar-s" style="--w:${pct(stageCost[k])}"></i></div>`).join('')}</div></section>`:''}
       ${vers.length>1?`<section class="panel"><div class="panel-h"><h2>النسخ</h2></div><div class="kv">${vers.map(v=>`<div><button class="lnk" data-open="${esc(v.id)}">v${v.version}</button><span class="pill p-${v.status}">${ST[v.status]}</span></div>`).join('')}</div></section>`:''}
       ${(d.hist||[]).length?`<section class="panel"><div class="panel-h"><h2>السجل</h2></div><div class="kv">${[...d.hist].reverse().slice(0,8).map(h=>`<div><span>${esc(h.a)}</span><span class="sub">${new Date(h.t).toLocaleDateString('ar-EG')}</span></div>`).join('')}</div></section>`:''}
     </aside>
@@ -336,7 +355,7 @@ async function saveBom(status){
   if(bad>=0){toast(`السطر ${bad+1}: اختار صنف موجود واكتب كمية أكبر من صفر.`,'bad');return}
   const nc=d.lines.findIndex(l=>l.itemId&&needsConv(l)&&n(l.conv)<=0);
   if(nc>=0){const l=d.lines[nc],it=byId('items',l.itemId);toast(`السطر ${nc+1}: اكتب الـ${it.unit} الواحد فيه كام ${l.unit}.`,'bad');$('#li-conv-'+nc)?.classList.add('bad');return}
-  const lines=d.lines.filter(l=>l.itemId).map(l=>{const it=byId('items',l.itemId),u=normU(l.unit||it.unit),o={itemId:l.itemId,qty:n(l.qty),scrap:n(l.scrap),unit:u};if(needsConv(l))o.conv=n(l.conv);return o});
+  const lines=d.lines.filter(l=>l.itemId).map(l=>{const it=byId('items',l.itemId),u=normU(l.unit||it.unit),o={itemId:l.itemId,qty:n(l.qty),scrap:n(l.scrap),unit:u,stage:lineStage(l)};if(needsConv(l))o.conv=n(l.conv);return o});
   if(!lines.length){toast('ضيف مكون واحد على الأقل.','bad');return}
   if(lines.some(l=>l.itemId===it.id)){toast('المنتج مينفعش يبقى مكوّن في نفسه.','bad');return}
   let id=d._for,version=d.version;
@@ -492,8 +511,8 @@ document.addEventListener('click',async e=>{
   const a=b.dataset.act;
   if(a==='back'){draft=null;view.id=null;render()}
   else if(a==='newBom'){draft=null;view={tab:'boms',id:'new'};render()}
-  else if(a==='addLine'){syncDraftFromInputs();draft.lines.push({itemId:'',qty:'',scrap:0});render();const l=document.querySelectorAll('.li-item');l[l.length-1]?.focus()}
-  else if(a==='rmLine'){syncDraftFromInputs();draft.lines.splice(+b.dataset.k,1);if(!draft.lines.length)draft.lines.push({itemId:'',qty:'',scrap:0});render()}
+  else if(a==='addLine'){syncDraftFromInputs();draft.lines.push({itemId:'',qty:'',scrap:0,stage:b.dataset.stage||'dough'});render();$('#li-item-'+(draft.lines.length-1))?.focus()}
+  else if(a==='rmLine'){syncDraftFromInputs();draft.lines.splice(+b.dataset.k,1);if(!draft.lines.length)draft.lines.push({itemId:'',qty:'',scrap:0,stage:'dough'});render()}
   else if(a==='saveBom')await saveBom('draft');
   else if(a==='approve'){if(arm(b,'متأكد؟ اعتمد'))await saveBom('approved')}
   else if(a==='archive'){const d=byId('boms',view.id);await put('boms',d.id,Object.assign({},d,{status:'archived'}),'أرشفة');draft=null;render()}
