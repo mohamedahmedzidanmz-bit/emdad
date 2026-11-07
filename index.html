@@ -1372,18 +1372,18 @@ function renderBills(){
     const sids=[...new Set(S.bills.map(b=>b.supplierId))];
     const rows=sids.map(sid=>({sid,due:supplierDue(sid),bills:S.bills.filter(b=>b.supplierId===sid).length,overdue:S.bills.filter(b=>b.supplierId===sid&&billStatus(b)!=='paid'&&b.dueDate&&b.dueDate<today()).length})).filter(x=>match(supName(x.sid))).sort((a,b)=>b.due-a.due);
     const row=x=>`<tr class="click" data-a="openSupplierLedger" data-id="${x.sid}"><td><b>${esc(supName(x.sid))}</b></td><td class="num">${x.bills}</td><td class="num ${x.overdue?'':''}" style="${x.overdue?'color:var(--bad)':''}">${x.overdue||'—'}</td><td class="num"><b>${money(x.due)}</b></td></tr>`;
-    return head('فواتير الموردين','',tools+searchBox('اسم المورد'))+
+    return head('فواتير الموردين','',tools+searchBox('اسم المورد')+`<button class="btn w" data-a="openingBalance">رصيد افتتاحي</button>`)+
     `<div class="kpis"><div class="kpi ${totalDue?'warn':''}"><small>إجمالي المستحق للموردين</small><b>${money(totalDue)}</b><span>${sids.length} مورد عليهم فواتير</span></div><div class="kpi ${overdue.length?'bad':''}"><small>فواتير متأخرة السداد</small><b>${overdue.length}</b></div></div>
     <section class="panel">${tbl(['المورد',['عدد الفواتير','num'],['متأخرة','num'],['الرصيد المستحق','num']],rows.map(row),'لسه مفيش موردين عليهم فواتير.',a=>money(sum(a,x=>x.due)))}</section>`;
   }
   const list=S.bills.map(b=>({b,st:billStatus(b)})).filter(({b})=>match(b.no,supName(b.supplierId),b.grn)).sort((a,b)=>(b.b.date||'').localeCompare(a.b.date||''));
-  const row=({b,st})=>{const[l,t]=BILL_ST[st];const rem=Math.max(0,(+b.amount||0)-(+b.paid||0));const late=st!=='paid'&&b.dueDate&&b.dueDate<today();return`<tr class="click" data-a="openBill" data-id="${b.id}"><td>${code(b.no)}</td><td>${esc(supName(b.supplierId))}</td><td class="code">${b.date}</td><td class="code">${late?chip(b.dueDate,'bad'):b.dueDate||'—'}</td><td class="num">${money(b.amount)}</td><td class="num">${money(b.paid||0)}</td><td class="num">${money(rem)}</td><td>${chip(l,t)}</td></tr>`};
+  const row=({b,st})=>{const[l,t]=BILL_ST[st];const rem=Math.max(0,(+b.amount||0)-(+b.paid||0));const late=st!=='paid'&&b.dueDate&&b.dueDate<today();return`<tr class="click" data-a="openBill" data-id="${b.id}"><td>${code(b.no)}${b.opening?' '+chip('رصيد افتتاحي','mute'):''}</td><td>${esc(supName(b.supplierId))}</td><td class="code">${b.date}</td><td class="code">${late?chip(b.dueDate,'bad'):b.dueDate||'—'}</td><td class="num">${money(b.amount)}</td><td class="num">${money(b.paid||0)}</td><td class="num">${money(rem)}</td><td>${chip(l,t)}</td></tr>`};
   return head('فواتير الموردين','بتتعمل تلقائي لما استلام يتقبل في فحص الجودة — فاتورة واحدة لكل إذن استلام، بتكبر كل ما صنف فيه يتفحص.',tools+searchBox('مورد، رقم فاتورة، أو إذن استلام'))+
   `<div class="kpis"><div class="kpi ${totalDue?'warn':''}"><small>إجمالي المستحق للموردين</small><b>${money(totalDue)}</b><span>${S.bills.length} فاتورة</span></div><div class="kpi ${overdue.length?'bad':''}"><small>فواتير متأخرة السداد</small><b>${overdue.length}</b><span>فات ميعاد استحقاقها</span></div></div>
   <section class="panel">${tbl(['رقم الفاتورة','المورد','التاريخ','الاستحقاق',['القيمة','num'],['المسدد','num'],['المتبقي','num'],'الحالة'],list.map(row),S.bills.length?'مفيش نتايج للبحث ده.':'<b>مفيش فواتير لسه</b>أي استلام يتقبل في فحص الجودة بيعمل فاتورة هنا تلقائي.')}</section>`;
 }
 function supplierLedgerRows(sid){
-  const bills=S.bills.filter(b=>b.supplierId===sid).map(b=>({date:b.date,type:'bill',ref:b.no,debit:+b.amount||0,credit:0,ts:b.ts||0}));
+  const bills=S.bills.filter(b=>b.supplierId===sid).map(b=>({date:b.date,type:b.opening?'opening':'bill',ref:b.no,debit:+b.amount||0,credit:0,ts:b.ts||0}));
   const pays=S.payments.filter(p=>p.supplierId===sid).map(p=>({date:p.date,type:'payment',ref:p.no,debit:0,credit:+p.amount||0,ts:p.ts||0}));
   const rows=[...bills,...pays].sort((a,b)=>(a.date||'').localeCompare(b.date||'')||a.ts-b.ts);
   let bal=0;return rows.map(r=>{bal=Math.round((bal+r.debit-r.credit)*100)/100;return Object.assign({},r,{bal})});
@@ -1391,10 +1391,26 @@ function supplierLedgerRows(sid){
 function openSupplierLedger(sid){
   const s=byId('suppliers',sid);if(!s)return;
   const rows=supplierLedgerRows(sid);
-  const tr=r=>`<tr><td class="code">${r.date}</td><td>${r.type==='bill'?'فاتورة':'سداد'}</td><td>${code(r.ref)}</td><td class="num" style="color:var(--bad)">${r.debit?money(r.debit):'—'}</td><td class="num" style="color:var(--ok)">${r.credit?money(r.credit):'—'}</td><td class="num"><b>${money(r.bal)}</b></td></tr>`;
+  const tr=r=>`<tr><td class="code">${r.date}</td><td>${r.type==='opening'?'رصيد افتتاحي':r.type==='bill'?'فاتورة':'سداد'}</td><td>${code(r.ref)}</td><td class="num" style="color:var(--bad)">${r.debit?money(r.debit):'—'}</td><td class="num" style="color:var(--ok)">${r.credit?money(r.credit):'—'}</td><td class="num"><b>${money(r.bal)}</b></td></tr>`;
   openDrawer(`كشف حساب ${s.name}`,`<div class="kv"><div><small>الرصيد المستحق حاليًا</small><b class="big">${money(supplierDue(sid))}</b></div><div><small>عدد الفواتير</small><b>${S.bills.filter(b=>b.supplierId===sid).length}</b></div><div><small>عدد السدادات</small><b>${S.payments.filter(p=>p.supplierId===sid).length}</b></div></div>
   <div class="panel">${tbl(['التاريخ','النوع','المرجع',['مدين (فاتورة)','num'],['دائن (سداد)','num'],['الرصيد','num']],rows.map(tr),'لسه مفيش حركات على المورد ده.')}</div>
-  <div class="actions"><span></span><button class="btn pri" data-a="paySupplier" data-id="${sid}">سدّد للمورد</button></div>`);
+  <div class="actions"><div class="gap"><button class="btn" data-a="openingBalance" data-id="${sid}">رصيد افتتاحي إضافي</button><button class="btn pri" data-a="paySupplier" data-id="${sid}">سدّد للمورد</button></div></div>`);
+}
+function openingBalanceForm(sid){
+  if(!S.suppliers.length){toast('أضف مورد الأول','bad');return}
+  openDrawer('رصيد افتتاحي لمورد',`<form class="main"><div class="fg">
+    ${sel('المورد','supplierId',[['','اختار مورد'],...S.suppliers.map(s=>[s.id,s.name])],sid||'',{full:true,req:true})}
+    ${fld('تاريخ الرصيد','date',{type:'date',value:today(),req:true})}
+    ${fld('المبلغ المستحق (ج.م)','amount',{type:'text',attrs:'inputmode="decimal" data-calc="1"',req:true,full:true,hint:'المبلغ اللي المورد ده مستحقله عندك من قبل ما تبدأ تسجّل فواتيره في إمداد.'})}
+    ${area('ملاحظات','notes','رصيد افتتاحي قبل استخدام إمداد')}
+  </div>${formActions('سجّل الرصيد الافتتاحي')}</form>`,
+  async fd=>{
+    const psid=fd.get('supplierId');if(!psid){toast('اختار المورد','bad');return false}
+    const amt=toNum(fd.get('amount'));if(!(amt>0)){toast('اكتب مبلغ أكبر من صفر','bad');return false}
+    const no=genNo('OPB');
+    await put('bills',no,{no,supplierId:psid,date:fd.get('date'),dueDate:fd.get('date'),amount:amt,paid:0,lines:[],opening:true,notes:fd.get('notes')},'رصيد افتتاحي');
+    toast(`اتسجل رصيد افتتاحي ${money(amt)} للمورد`);
+  });
 }
 function openBill(id){
   const b=byId('bills',id);if(!b)return;const st=billStatus(b),[l,t]=BILL_ST[st],rem=Math.max(0,(+b.amount||0)-(+b.paid||0));
@@ -2224,6 +2240,7 @@ const ACT={
   paySupplier:d=>paySupplierForm(d&&d.id),
   openPayment:d=>openPayment(d.id),
   openSupplierLedger:d=>openSupplierLedger(d.id),
+  openingBalance:d=>openingBalanceForm(d&&d.id),
   exportLedger:(d,b)=>run(async()=>{
     const i=byId('items',d.id);if(!i)return;const rows=ledgerRows(d.id);
     b.disabled=true;const t=b.textContent;b.textContent='بنجهّز الملف…';
@@ -2272,7 +2289,7 @@ function arm(b,fn){if(b.dataset.armed){delete b.dataset.armed;fn();return}const 
 // action -> module it belongs to; ':view' opens a record (read allowed if the module is visible)
 const ACT_MOD={addSupplier:'suppliers',editSupplier:'suppliers:view',autoCodeSup:'suppliers',xlImportSup:'suppliers',xlImportItems:'inv',addWh:'wh',editWh:'wh:view',seedWh:'wh',addDept:'dept',editDept:'dept:view',seedDept:'dept',addItem:'inv',editItem:'inv:view',move:'inv',addRfq:'rfqs',rfqFromItem:'rfqs',openRfq:'rfqs:view',award:'rfqs',setFx:'rfqs',delQuote:'rfqs',cancelRfq:'rfqs',paste:'rfqs',invite:'rfqs',copyInvite:'rfqs',
   addPo:'pos',openPo:'pos:view',editPo:'pos',sendPo:'pos',cancelPo:'pos',approvePo:'approve',rejectPo:'approve',receive:'grn',grnNew:'grn',openGrn:'grn:view',inspect:'qa',issueNew:'issue',issueBranch:'issue',openIssue:'issue:view',editSale:'sales:view',
-  iretNew:'iret',openIret:'iret:view',rretNew:'rret',openRret:'rret:view',addShip:'ship',editShip:'ship',shipNext:'ship',openShip:'ship:view',settings:'admin',clearSample:'admin',setRole:'admin',delRole:'admin',addRole:'admin',dismissReq:'admin',approveDevice:'admin',exportXlsx:'reports',copyReport:'reports:view',openLedger:'inv:view',exportLedger:'reports',addCount:'count',openCount:'count:view',saveCount:'count',postCount:'count',cancelCount:'count',exportCountXlsx:'count:view',applyRevalPct:'reval',postReval:'reval',openReval:'reval:view',exportRevalXlsx:'reval:view',openBill:'bills:view',paySupplier:'payments',openPayment:'payments:view',openSupplierLedger:'bills:view'};
+  iretNew:'iret',openIret:'iret:view',rretNew:'rret',openRret:'rret:view',addShip:'ship',editShip:'ship',shipNext:'ship',openShip:'ship:view',settings:'admin',clearSample:'admin',setRole:'admin',delRole:'admin',addRole:'admin',dismissReq:'admin',approveDevice:'admin',exportXlsx:'reports',copyReport:'reports:view',openLedger:'inv:view',exportLedger:'reports',addCount:'count',openCount:'count:view',saveCount:'count',postCount:'count',cancelCount:'count',exportCountXlsx:'count:view',applyRevalPct:'reval',postReval:'reval',openReval:'reval:view',exportRevalXlsx:'reval:view',openBill:'bills:view',paySupplier:'payments',openPayment:'payments:view',openSupplierLedger:'bills:view',openingBalance:'bills'};
 const COL_MOD={suppliers:'suppliers',items:'inv',pos:'pos',shipments:'ship',warehouses:'wh',depts:'dept'};
 const actAllowed=(name,d)=>{let spec=name==='del'?COL_MOD[d.col]:ACT_MOD[name];if(!spec)return true;const[m,v]=spec.split(':');return v==='view'?(canSee(m)||canEditMod(m)):canEditMod(m)};
 document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(!b)return;const name=b.dataset.a,a=ACT[name];if(!a)return;
