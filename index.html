@@ -428,7 +428,7 @@ tr.grp:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 <script>
 document.documentElement.dir='rtl';document.documentElement.lang='ar';
 const $=s=>document.querySelector(s);
-const COLS=['suppliers','items','rfqs','pos','inspections','shipments','movements','settings','grns','issues','rreturns','ireturns','roles','requests','warehouses','depts','counts','sales'];
+const COLS=['suppliers','items','rfqs','pos','inspections','shipments','movements','settings','grns','issues','rreturns','ireturns','roles','requests','warehouses','depts','counts','sales','revals','devices'];
 const DEFAULT_FORM_URL=(()=>{try{return new URL('quote-form.html',location.href).href}catch(e){return 'quote-form.html'}})();
 const S={};COLS.forEach(c=>S[c]=[]);
 const loaded=new Set();
@@ -440,7 +440,7 @@ let me={id:null,owner:false,editor:false},userNS=null,downloadsNS=null,drawerRO=
 const ROLES={
   admin:{t:'مدير النظام',see:'*',edit:'*',approve:true},
   manager:{t:'الإدارة',see:'*',edit:'*',approve:true},
-  purchasing:{t:'المشتريات',see:['dash','suppliers','rfqs','pos','inv','reports','activity'],edit:['suppliers','rfqs','pos']},
+  purchasing:{t:'المشتريات',see:['dash','suppliers','rfqs','pos','inv','reval','reports','activity'],edit:['suppliers','rfqs','pos','reval']},
   warehouse:{t:'المخازن',see:['dash','pos','grn','qa','inv','issue','rret','iret','wh','dept','count','sales','activity'],edit:['grn','inv','issue','rret','iret','wh','count']},
   quality:{t:'الجودة',see:['dash','suppliers','grn','qa','inv','rret','wh','count','activity'],edit:['qa']},
   shipping:{t:'الشحن',see:['dash','inv','ship','sales','activity'],edit:['ship']},
@@ -648,7 +648,8 @@ const VIEWS={
   wh:{t:'المخازن',r:renderWh,g:'المخازن'},
   dept:{t:'الأقسام والفروع',r:renderDept,g:'المخازن'},
   count:{t:'جرد المخزون',r:renderCounts,g:'المخازن'},
-  sales:{t:'مبيعات الفروع',r:renderSales,g:'المخازن'}
+  sales:{t:'مبيعات الفروع',r:renderSales,g:'المخازن'},
+  reval:{t:'إعادة تقييم المخزون',r:renderReval,g:'المخازن'}
 };
 const VIEW_MOD={dash:'',reports:'',activity:'',users:'admin'};
 const viewMod=v=>v in VIEW_MOD?VIEW_MOD[v]:v;
@@ -666,13 +667,13 @@ function navCount(v){
 const APPS=[
   {k:'dash',t:'لوحة التحكم',v:['dash'],c:'#714B67',i:'dash'},
   {k:'purchase',t:'المشتريات',v:['rfqs','pos','suppliers'],c:'#B5473A',i:'purchase'},
-  {k:'inventory',t:'المخزون',v:['inv','grn','issue','rret','iret','wh','dept','count','sales'],c:'#1E8A5A',i:'inventory'},
+  {k:'inventory',t:'المخزون',v:['inv','grn','issue','rret','iret','wh','dept','count','sales','reval'],c:'#1E8A5A',i:'inventory'},
   {k:'quality',t:'الجودة',v:['qa'],c:'#5B5FC7',i:'quality'},
   {k:'ship',t:'الشحن',v:['ship'],c:'#C27A12',i:'ship'},
   {k:'reports',t:'التقارير',v:['reports','activity'],c:'#2F6FB0',i:'reports'},
   {k:'users',t:'الإعدادات',v:['users'],c:'#55606B',i:'users'}
 ];
-const MENU_T={dash:'نظرة عامة',rfqs:'طلبات عروض الأسعار',pos:'أوامر الشراء',suppliers:'الموردين',inv:'المنتجات',grn:'الاستلام',issue:'الصرف',rret:'مرتجعات لموردين',iret:'مرتجعات صرف',qa:'فحص الاستلام',ship:'الشحنات',reports:'تقارير الإدارة',activity:'سجل النشاط',users:'المستخدمين والصلاحيات',wh:'المخازن',dept:'الأقسام',count:'الجرد',sales:'مبيعات الفروع'};
+const MENU_T={dash:'نظرة عامة',rfqs:'طلبات عروض الأسعار',pos:'أوامر الشراء',suppliers:'الموردين',inv:'المنتجات',grn:'الاستلام',issue:'الصرف',rret:'مرتجعات لموردين',iret:'مرتجعات صرف',qa:'فحص الاستلام',ship:'الشحنات',reports:'تقارير الإدارة',activity:'سجل النشاط',users:'المستخدمين والصلاحيات',wh:'المخازن',dept:'الأقسام',count:'الجرد',sales:'مبيعات الفروع',reval:'إعادة التقييم'};
 const appOf=v=>APPS.find(a=>a.v.includes(v))||APPS[0];
 function homeHtml(ready){
   if(ready&&mode==='live'&&!myRole())return gateHtml();
@@ -695,7 +696,9 @@ function render(){
   document.querySelector('main').classList.toggle('home',!!ui.home);
   const a=document.activeElement,fid=a&&a.id&&$('#view').contains(a)?a.id:null,pos=fid?a.selectionStart:null;
   const ready=mode==='local'||loaded.size===COLS.length;
-  $('#view').innerHTML=ui.home?homeHtml(ready):ready?VIEWS[ui.view].r():`<div class="o-cp"><div class="o-cp-top"><h1 class="o-bc-cur">${VIEWS[ui.view].t}</h1><p class="o-sub">بنجيب بيانات المصنع…</p></div></div><div class="panel"><div class="empty"><b>لحظة واحدة</b>بنحمّل الموردين والأصناف وأوامر الشراء.</div></div>`;
+  const locked=ready&&mode==='live'&&role&&!deviceApproved();
+  if(locked){registerDeviceIfNeeded();$('#nav').innerHTML=''}
+  $('#view').innerHTML=locked?deviceGateHtml():ui.home?homeHtml(ready):ready?VIEWS[ui.view].r():`<div class="o-cp"><div class="o-cp-top"><h1 class="o-bc-cur">${VIEWS[ui.view].t}</h1><p class="o-sub">بنجيب بيانات المصنع…</p></div></div><div class="panel"><div class="empty"><b>لحظة واحدة</b>بنحمّل الموردين والأصناف وأوامر الشراء.</div></div>`;
   if(fid){const el=document.getElementById(fid);if(el){el.focus();try{if(pos!=null)el.setSelectionRange(pos,pos)}catch(e){}}}
   refreshNames();
 }
@@ -798,6 +801,27 @@ function gateHtml(){
   return`<div class="gate"><h1>أهلاً ${whoH(me.id)}</h1><p>انت لسه مالكش دور في منظومة إمداد. اطلب صلاحية، والمسؤول هيحدد دورك (مشتريات، مخازن، جودة، شحن، أو متابعة).</p>
   ${!me.id?'<p>لازم تسجّل دخول الأول علشان تطلب صلاحية.</p>':requested?chip('طلبك اتبعت، مستني موافقة المسؤول','info'):'<button class="btn pri" data-a="requestAccess">اطلب صلاحية</button>'}</div>`;
 }
+/* ---------- device approval gate (deters an ordinary employee role from a strange browser — see Rules/README: not a real backend lock) ---------- */
+function deviceId(){
+  let id;try{id=localStorage.getItem('emdad-device-id')}catch(e){}
+  if(!id){id='DEV-'+(crypto.randomUUID?crypto.randomUUID():genNo('x'));try{localStorage.setItem('emdad-device-id',id)}catch(e){}}
+  return id;
+}
+const DEVICE_EXEMPT=['admin','manager'];
+function deviceApproved(){if(DEVICE_EXEMPT.includes(myRole()))return true;const d=byId('devices',deviceId());return!!d&&d.approved==='yes'}
+let deviceRegistering=false;
+async function registerDeviceIfNeeded(){
+  if(deviceRegistering||DEVICE_EXEMPT.includes(myRole())||byId('devices',deviceId()))return;
+  deviceRegistering=true;
+  try{await put('devices',deviceId(),{approved:'no',ua:(navigator.userAgent||'').slice(0,160),requestedBy:me.id||'',requestedAt:Date.now()})}catch(e){}
+  deviceRegistering=false;
+}
+function deviceGateHtml(){
+  const d=byId('devices',deviceId());
+  return`<div class="gate"><h1>الجهاز ده لسه مش معتمد</h1><p>مدير النظام لازم يوافق على الجهاز/المتصفح ده الأول قبل ما تقدر تستخدم إمداد منه.</p>
+  ${d?chip('طلب الاعتماد اتبعت، مستني موافقة المدير','info'):'<p>بنسجّل طلب اعتماد للجهاز ده دلوقتي…</p>'}
+  <p class="hint">لو ده جهازك المعتاد وكان شغال قبل كده، كلّم مدير النظام يتأكد إنه معتمد.</p></div>`;
+}
 const roleSel=(id,val)=>`<select class="search" style="width:auto" data-role-for="${esc(id)}" aria-label="الدور">${ASSIGNABLE.map(k=>`<option value="${k}"${k===val?' selected':''}>${ROLES[k].t}</option>`).join('')}</select>`;
 function renderUsers(){
   const reqs=S.requests.filter(r=>!S.roles.some(x=>x.id===r.id)).sort((a,b)=>(b.ts||0)-(a.ts||0));
@@ -807,7 +831,8 @@ function renderUsers(){
   ${reqs.length?`<section class="panel"><h2>طلبات صلاحية <small>${reqs.length}</small></h2>${tbl(['الشخص','وقت الطلب','الدور',''],reqs.map(r=>`<tr><td>${whoH(r.id)}</td><td class="code">${fmtTs(r.ts)}</td><td>${roleSel(r.id,'viewer')}</td><td><span class="tags"><button class="btn sm pri" data-a="addRole" data-id="${esc(r.id)}">وافق</button><button class="btn sm danger" data-a="dismissReq" data-id="${esc(r.id)}">ارفض</button></span></td></tr>`),'')}</section>`:''}
   <section class="panel"><h2>أضف شخص من المؤسسة</h2><div class="pbody picker"><input class="search" id="userSearch" data-in="usearch" placeholder="اكتب اسم أو إيميل" style="width:100%" autocomplete="off"><div class="res" id="userRes" hidden></div></div></section>
   <section class="panel"><h2>الفريق <small>${S.roles.length} شخص</small></h2>${tbl(['الشخص','الدور','آخر تعديل',''],S.roles.map(r=>`<tr><td>${whoH(r.id)}</td><td>${roleSel(r.id,r.role)}</td><td><span class="code">${fmtTs(r.updatedAt)}</span><span class="sub">${whoH(r.updatedBy)}</span></td><td><button class="btn sm danger" data-a="delRole" data-id="${esc(r.id)}">شيل الصلاحية</button></td></tr>`),'لسه مفيش حد متعيّن. أي حد يفتح الصفحة من غير دور هيقدر يبعت طلب صلاحية يظهرلك هنا، أو دور عليه بالاسم فوق.')}</section>
-  <section class="panel"><h2>مين يقدر يعمل إيه</h2>${tbl(['الدور','بيشوف','بيسجّل في'],['admin',...ASSIGNABLE].map(k=>{const r=ROLES[k];return`<tr><td><b>${r.t}</b>${r.approve?'<span class="sub">بيعتمد أوامر الشراء</span>':''}${k==='admin'?'<span class="sub">الإيميلات اللي في جدول admins</span>':''}</td><td>${lab(r.see)}${k==='admin'?'، والمستخدمين والإعدادات':''}</td><td>${r.edit==='*'?'كل حاجة':r.edit.length?lab(r.edit):'مش بيسجّل'}</td></tr>`}),'')}</section>`;
+  <section class="panel"><h2>مين يقدر يعمل إيه</h2>${tbl(['الدور','بيشوف','بيسجّل في'],['admin',...ASSIGNABLE].map(k=>{const r=ROLES[k];return`<tr><td><b>${r.t}</b>${r.approve?'<span class="sub">بيعتمد أوامر الشراء</span>':''}${k==='admin'?'<span class="sub">الإيميلات اللي في جدول admins</span>':''}</td><td>${lab(r.see)}${k==='admin'?'، والمستخدمين والإعدادات':''}</td><td>${r.edit==='*'?'كل حاجة':r.edit.length?lab(r.edit):'مش بيسجّل'}</td></tr>`}),'')}</section>
+  <section class="panel"><h2>الأجهزة <small>${S.devices.length}</small></h2><div class="note"><span>أي حد بدور غير مدير/إدارة لازم يستخدم إمداد من جهاز معتمد. أول ما حد يفتح الصفحة من جهاز جديد، هيتسجّل هنا منتظر الموافقة ومش هيقدر يستخدم البرنامج لحد ما توافق.</span></div>${tbl(['الجهاز','طلب بواسطة','وقت الطلب','الحالة',''],[...S.devices].sort((a,b)=>(a.approved==='yes')-(b.approved==='yes')||(b.requestedAt||0)-(a.requestedAt||0)).map(d=>`<tr><td><span class="code">${esc(d.id.slice(0,14))}…</span><span class="sub">${esc((d.ua||'').slice(0,60))}</span></td><td>${whoH(d.requestedBy)}</td><td class="code">${fmtTs(d.requestedAt)}</td><td>${d.approved==='yes'?chip('معتمد','ok'):chip('منتظر الموافقة','warn')}</td><td><span class="tags">${d.approved!=='yes'?`<button class="btn sm pri" data-a="approveDevice" data-id="${esc(d.id)}">اعتماد</button>`:''}<button class="btn sm danger" data-a="del" data-col="devices" data-id="${esc(d.id)}">${d.approved==='yes'?'إلغاء الاعتماد':'رفض'}</button></span></td></tr>`),'لسه مفيش أجهزة متسجّلة.')}</section>`;
 }
 let searchSeq=0;
 async function userSearch(q){
@@ -1697,6 +1722,84 @@ document.addEventListener('input',e=>{
   cell.style.color=(diff==null||diff===0)?'':diff>0?'var(--ok)':'var(--bad)';
 });
 
+/* ---------- inventory revaluation ---------- */
+function revalRows(){
+  return[...document.querySelectorAll('#revalPanel [data-reval-item]')].map(tr=>{
+    const itemId=tr.dataset.revalItem,old=+tr.dataset.old||0,onHand=+tr.dataset.onhand||0;
+    const inp=tr.querySelector('.reval-new');const nv=toNum(inp.value);const nw=isNaN(nv)?old:nv;
+    return{itemId,old,nw,onHand,diff:Math.round((nw-old)*onHand*100)/100}
+  });
+}
+function revalTotals(){
+  const rows=revalRows();const cur=sum(rows,r=>r.old*r.onHand),nw=sum(rows,r=>r.nw*r.onHand);
+  const box=$('#revalTotals');if(!box)return;
+  const kpis=box.querySelectorAll('.kpi b');
+  if(kpis[0])kpis[0].textContent=money(cur);if(kpis[1])kpis[1].textContent=money(nw);
+  if(kpis[2]){const d=nw-cur;kpis[2].textContent=(d>=0?'+':'')+money(d);kpis[2].parentElement.className='kpi'+(d<0?' bad':d>0?' warn':'')}
+  document.querySelectorAll('#revalPanel [data-reval-item]').forEach(tr=>{
+    const old=+tr.dataset.old||0,onHand=+tr.dataset.onhand||0,nv=toNum(tr.querySelector('.reval-new').value);
+    const nw=isNaN(nv)?old:nv,d=Math.round((nw-old)*onHand*100)/100,cell=tr.querySelector('.reval-diff');
+    cell.textContent=d===0?'—':(d>0?'+':'')+money(d);cell.style.color=d===0?'':d>0?'var(--ok)':'var(--bad)';
+  });
+}
+document.addEventListener('input',e=>{if(e.target.classList.contains('reval-new'))revalTotals()});
+function revalList(){return S.items.filter(i=>ui.invType==='all'||i.type===ui.invType).filter(i=>match(i.sku,i.name)).sort((a,b)=>(a.sku||'').localeCompare(b.sku||''))}
+async function exportRevalXlsx(){
+  const list=revalList();if(!list.length){toast('مفيش أصناف بالفلتر ده','bad');return}
+  const X=await loadXLSX(),wb=X.utils.book_new();wb.Workbook={Views:[{RTL:true}]};
+  const head=['الكود','الصنف','الوحدة','التكلفة الحالية','التكلفة الجديدة'];
+  const rows=list.map(i=>[xlsxCode(i.sku),i.name||'',i.unit||'',+i.cost||0,+i.cost||0]);
+  const ws=X.utils.aoa_to_sheet([head,...rows]);ws['!cols']=head.map((h,i)=>({wch:i===1?30:16}));
+  X.utils.book_append_sheet(wb,ws,'إعادة التقييم');
+  const help=X.utils.aoa_to_sheet([['تعليمات'],['غيّر عمود «التكلفة الجديدة» بس للأصناف اللي عايز تغيّر تكلفتها، واحفظ الملف.'],['متغيّرش عمود الكود — بيه بيتم ربط كل صف بالصنف الصح وقت الرفع.'],['الأصناف اللي متغيّرش فيها التكلفة الجديدة هتفضل زي ما هي بعد الرفع.']]);
+  help['!cols']=[{wch:85}];X.utils.book_append_sheet(wb,help,'تعليمات');
+  if(await saveXlsx(X,wb,'إعادة تقييم المخزون.xlsx'))toast('اتنزّل الملف. عدّل التكلفة الجديدة وارفعه تاني');
+}
+async function importRevalFile(file){
+  const X=await loadXLSX();const wb=X.read(await file.arrayBuffer(),{type:'array'});const ws=wb.Sheets[wb.SheetNames[0]];
+  const rows=X.utils.sheet_to_json(ws,{header:1,defval:'',raw:true});
+  if(!rows.length){toast('الملف فاضي','bad');return}
+  const header=rows[0].map(h=>String(h||'').trim());
+  const codeIdx=header.indexOf('الكود'),newIdx=header.indexOf('التكلفة الجديدة');
+  if(codeIdx<0||newIdx<0){toast('الملف لازم يكون نفس ملف «تصدير Excel» (لازم عمود «الكود» وعمود «التكلفة الجديدة»)','bad');return}
+  let matched=0,skipped=0;
+  rows.slice(1).forEach(r=>{
+    const sku=String(r[codeIdx]??'').trim(),nvRaw=r[newIdx];
+    if(!sku||nvRaw===''||nvRaw==null)return;
+    const nv=toNum(nvRaw);if(isNaN(nv))return;
+    const it=S.items.find(x=>String(x.sku||'').trim()===sku);
+    const tr=it&&document.querySelector(`#revalPanel [data-reval-item="${CSS.escape(it.id)}"]`);
+    if(tr){tr.querySelector('.reval-new').value=num(nv,2);matched++}else skipped++;
+  });
+  if(!matched){toast('مفيش ولا صف اتطابق مع الأصناف المعروضة دلوقتي. استخدم نفس الملف اللي نزّلته من «تصدير Excel»','bad');return}
+  revalTotals();
+  toast(`اتحدّثت تكلفة ${matched} صنف من الملف${skipped?` (${skipped} صف من غير صنف متطابق أو مش معروض دلوقتي)`:''}. راجع الأرقام قبل ما تعتمد`);
+}
+document.addEventListener('change',e=>{
+  if(e.target.id!=='revalFile'||!e.target.files[0])return;
+  const f=e.target.files[0];e.target.value='';run(()=>importRevalFile(f));
+});
+function renderReval(){
+  const list=revalList();
+  const row=i=>`<tr data-reval-item="${i.id}" data-old="${+i.cost||0}" data-onhand="${+i.onHand||0}"><td>${code(i.sku)}</td><td><b>${esc(i.name)}</b><span class="sub">${ITEM_T[i.type]||''}</span></td><td class="num">${num(i.onHand,2)} ${esc(i.unit||'')}</td><td class="num">${money(i.cost)}</td><td class="num"><input type="text" inputmode="decimal" data-calc="1" class="reval-new" style="width:100px;text-align:end" value="${num(+i.cost||0,2)}" aria-label="التكلفة الجديدة لـ ${esc(i.name)}"></td><td class="num reval-diff">—</td></tr>`;
+  const canPost=canEditMod('reval');
+  return head('إعادة تقييم المخزون','حدّث تكلفة الوحدة لأي عدد من الأصناف دفعة واحدة — بسبب تغيّر الأسعار أو الظروف الاقتصادية — وشوف أثر الفرق على قيمة المخزون قبل ما تعتمد.',
+    seg('invType',[['all','الكل'],...Object.entries(ITEM_T)])+searchBox('كود أو اسم')+
+    (canPost?`<span class="f" style="flex-direction:row;align-items:center;gap:6px;min-width:0"><input type="text" inputmode="decimal" id="revalPct" placeholder="نسبة % مثلاً 10 أو -5" class="in" style="width:150px"><button type="button" class="btn" data-a="applyRevalPct">طبّق على المعروض</button></span>`:'')+
+    (canPost?`<button type="button" class="btn" data-a="exportRevalXlsx">تصدير Excel</button><label class="btn" style="cursor:pointer;margin:0">استيراد من Excel<input type="file" id="revalFile" accept=".xlsx,.xls,.csv" style="display:none"></label>`:''))+
+  `<section class="panel" id="revalPanel">${list.length?`<div class="tw"><table><thead><tr><th>الكود</th><th>الصنف</th><th class="num">الرصيد</th><th class="num">التكلفة الحالية</th><th class="num">التكلفة الجديدة</th><th class="num">فرق القيمة</th></tr></thead><tbody>${list.map(row).join('')}</tbody></table></div>`:`<div class="empty"><b>مفيش أصناف</b>${S.items.length?'جرّب فلتر تاني.':'عرّف الأصناف الأول من شاشة المخزون.'}</div>`}</section>
+  <div class="kpis" id="revalTotals"><div class="kpi"><small>القيمة الحالية (المعروض)</small><b>${money(sum(list,i=>i.onHand*i.cost))}</b></div><div class="kpi"><small>القيمة بعد التقييم</small><b>${money(sum(list,i=>i.onHand*i.cost))}</b></div><div class="kpi"><small>الفرق</small><b>0 ج.م</b></div></div>
+  ${canPost&&list.length?`<div class="actions"><span></span><button class="btn pri" data-a="postReval">اعتماد التقييم</button></div>`:''}
+  <h3 class="sec">آخر عمليات التقييم</h3>
+  <section class="panel">${tbl(['التاريخ','النطاق','عدد الأصناف','الفرق الإجمالي','بواسطة'],[...S.revals].sort((a,b)=>(b.ts||0)-(a.ts||0)).slice(0,15).map(r=>`<tr class="click" data-a="openReval" data-id="${r.id}"><td class="code">${r.date}</td><td>${esc(r.scopeLabel||'')}</td><td class="num">${(r.lines||[]).length}</td><td class="num" style="color:var(--${(+r.totalDiff||0)>=0?'ok':'bad'})">${(+r.totalDiff||0)>=0?'+':''}${money(r.totalDiff)}</td><td>${whoH(r.createdBy)}</td></tr>`),'لسه مفيش عمليات إعادة تقييم.')}</section>`;
+}
+function openReval(id){
+  const r=byId('revals',id);if(!r)return;
+  const rows=(r.lines||[]).map(l=>`<tr><td>${esc(itemName(l.itemId))}</td><td class="num">${num(l.onHand,2)}</td><td class="num">${money(l.old)}</td><td class="num">${money(l.nw)}</td><td class="num" style="color:var(--${l.diff>=0?'ok':'bad'})">${l.diff>=0?'+':''}${money(l.diff)}</td></tr>`);
+  openDrawer(`تقييم ${r.date}`,`<div class="kv"><div><small>النطاق</small><b>${esc(r.scopeLabel||'')}</b></div><div><small>عدد الأصناف</small><b>${(r.lines||[]).length}</b></div><div><small>الفرق الإجمالي</small><b style="color:var(--${(+r.totalDiff||0)>=0?'ok':'bad'})">${(+r.totalDiff||0)>=0?'+':''}${money(r.totalDiff)}</b></div><div><small>بواسطة</small><b>${whoH(r.createdBy)}</b></div></div>
+  <div class="panel">${tbl(['الصنف',['الرصيد','num'],['التكلفة القديمة','num'],['التكلفة الجديدة','num'],['فرق القيمة','num']],rows,'—')}</div>`);
+}
+
 /* ---------- shipping ---------- */
 function renderShip(){
   const list=S.shipments.filter(s=>ui.shipFilter==='all'||['prep','shipped','transit'].includes(s.status)).filter(s=>match(s.no,s.customer,s.city,s.carrier,s.tracking)).sort((a,b)=>(b.ts||0)-(a.ts||0));
@@ -1956,6 +2059,7 @@ const ACT={
   cancelRfq:(d,b)=>arm(b,()=>run(async()=>{await patch('rfqs',d.id,{status:'cancelled'});closeDrawer();toast('اتلغى الطلب')})),
   settings:()=>settingsForm(),paste:()=>pasteForm(),
   requestAccess:()=>run(async()=>{if(!me.id)return;try{await put('requests',me.id,{ts:Date.now()})}catch(e){toast('الطلب اترفض. جرّب تاني، أو كلّم مدير النظام.','bad');S.requests=S.requests.filter(r=>r.id!==me.id);schedule();return}toast('اتبعت طلب الصلاحية')}),
+  approveDevice:d=>run(async()=>{await patch('devices',d.id,{approved:'yes',approvedBy:me.id||'',approvedAt:Date.now()});toast('اتعمد الجهاز')}),
   addRole:d=>run(async()=>{const s=document.querySelector(`[data-role-for="${CSS.escape(d.id)}"]`);const role=s?s.value:'viewer';await put('roles',d.id,{role},'تعيين دور: '+ROLES[role].t);if(byId('requests',d.id))await remove('requests',d.id);const box=$('#userRes');if(box){box.hidden=true;box.innerHTML=''}const inp=$('#userSearch');if(inp)inp.value='';toast(`اتحدد الدور: ${ROLES[role].t}`)}),
   copyReport:()=>copyText(reportText()),
   openLedger:d=>itemLedger(d.id),
@@ -1972,6 +2076,31 @@ const ACT={
     }finally{postingCounts.delete(d.id);b.disabled=false}
   })),
   cancelCount:(d,b)=>arm(b,()=>run(async()=>{await patch('counts',d.id,{status:'cancelled'});closeDrawer();toast('اتلغى الجرد')})),
+  applyRevalPct:()=>{
+    const pct=toNum(($('#revalPct')||{}).value);if(isNaN(pct)){toast('اكتب نسبة صحيحة، موجبة أو سالبة','bad');return}
+    document.querySelectorAll('#revalPanel [data-reval-item]').forEach(tr=>{
+      const old=+tr.dataset.old||0,inp=tr.querySelector('.reval-new');
+      inp.value=num(Math.round(old*(1+pct/100)*10000)/10000,2);
+    });
+    revalTotals();toast(`اتطبقت نسبة ${pct>0?'+':''}${pct}% على ${document.querySelectorAll('#revalPanel [data-reval-item]').length} صنف`);
+  },
+  postReval:(d,b)=>arm(b,()=>run(async()=>{
+    const rows=revalRows().filter(r=>Math.round((r.nw-r.old)*1000)!==0);
+    if(!rows.length){toast('مفيش أي تكلفة اتغيّرت','bad');return}
+    b.disabled=true;
+    try{
+      for(const r of rows){const it=byId('items',r.itemId);if(!it)continue;await put('items',r.itemId,Object.assign({},strip(it),{cost:r.nw}),`إعادة تقييم: من ${money(r.old)} لـ ${money(r.nw)}`)}
+      const totalDiff=Math.round(sum(rows,r=>r.diff)*100)/100;
+      const pctEl=$('#revalPct'),pct=pctEl?toNum(pctEl.value):NaN;
+      const scopeLabel=`${rows.length} صنف${!isNaN(pct)?` · نسبة ${pct>0?'+':''}${pct}%`:''}`;
+      const nid=genNo('RV');
+      await put('revals',nid,{date:today(),ts:Date.now(),scopeLabel,pct:isNaN(pct)?null:pct,lines:rows,totalDiff,createdBy:me.id||''});
+      toast(`اتعمد التقييم. ${rows.length} صنف اتحدّثت تكلفته، فرق القيمة ${totalDiff>=0?'+':''}${money(totalDiff)}`);
+      ui.view='reval';schedule();
+    }finally{b.disabled=false}
+  })),
+  openReval:d=>openReval(d.id),
+  exportRevalXlsx:(d,b)=>run(async()=>{b.disabled=true;try{await exportRevalXlsx()}finally{b.disabled=false}}),
   exportLedger:(d,b)=>run(async()=>{
     const i=byId('items',d.id);if(!i)return;const rows=ledgerRows(d.id);
     b.disabled=true;const t=b.textContent;b.textContent='بنجهّز الملف…';
@@ -2010,14 +2139,17 @@ const ACT={
   addShip:()=>shipForm(),editShip:d=>shipForm(d.id),shipNext:d=>run(async()=>{await shipNext(d.id);if(!$('#drawer').hidden)openShip(d.id)}),
   addLine:()=>{const w=$('#lines');w.insertAdjacentHTML('beforeend',lineRow({},{np:w.dataset.np==='1'}));if(w.closest('form.ship'))w.lastElementChild.querySelector('[name=li_price]').required=false},
   rmLine:(d,b)=>{const w=b.closest('.lines');if(w.children.length>1||w.dataset.optional==='1')b.closest('.line').remove()},
-  del:(d,b)=>arm(b,()=>run(async()=>{await remove(d.col,d.id);closeDrawer();toast('اتحذف')})),
+  del:(d,b)=>arm(b,()=>run(async()=>{
+    if(d.col==='items'&&S.movements.some(m=>m.itemId===d.id)){toast('الصنف ده ليه حركات مخزنية مسجلة (استلام/صرف/جرد). مينفعش يتمسح عشان هنضيع تاريخه.','bad');return}
+    await remove(d.col,d.id);closeDrawer();toast('اتحذف')
+  })),
   clearSample:(d,b)=>arm(b,()=>run(async()=>{let n=0;for(const c of COLS)for(const x of S[c].filter(x=>x.sample===true)){await remove(c,x.id);n++}toast(`اتمسح ${n} سجل مثال`)}))
 };
 function arm(b,fn){if(b.dataset.armed){delete b.dataset.armed;fn();return}const t=b.textContent;b.dataset.armed='1';b.textContent='اضغط تاني للتأكيد';setTimeout(()=>{if(b.isConnected&&b.dataset.armed){delete b.dataset.armed;b.textContent=t}},3500)}
 // action -> module it belongs to; ':view' opens a record (read allowed if the module is visible)
 const ACT_MOD={addSupplier:'suppliers',editSupplier:'suppliers:view',autoCodeSup:'suppliers',xlImportSup:'suppliers',xlImportItems:'inv',addWh:'wh',editWh:'wh:view',seedWh:'wh',addDept:'dept',editDept:'dept:view',seedDept:'dept',addItem:'inv',editItem:'inv:view',move:'inv',addRfq:'rfqs',rfqFromItem:'rfqs',openRfq:'rfqs:view',award:'rfqs',setFx:'rfqs',delQuote:'rfqs',cancelRfq:'rfqs',paste:'rfqs',invite:'rfqs',copyInvite:'rfqs',
   addPo:'pos',openPo:'pos:view',editPo:'pos',sendPo:'pos',cancelPo:'pos',approvePo:'approve',rejectPo:'approve',receive:'grn',grnNew:'grn',openGrn:'grn:view',inspect:'qa',issueNew:'issue',issueBranch:'issue',openIssue:'issue:view',editSale:'sales:view',
-  iretNew:'iret',openIret:'iret:view',rretNew:'rret',openRret:'rret:view',addShip:'ship',editShip:'ship',shipNext:'ship',openShip:'ship:view',settings:'admin',clearSample:'admin',setRole:'admin',delRole:'admin',addRole:'admin',dismissReq:'admin',exportXlsx:'reports',copyReport:'reports:view',openLedger:'inv:view',exportLedger:'reports',addCount:'count',openCount:'count:view',saveCount:'count',postCount:'count',cancelCount:'count',exportCountXlsx:'count:view'};
+  iretNew:'iret',openIret:'iret:view',rretNew:'rret',openRret:'rret:view',addShip:'ship',editShip:'ship',shipNext:'ship',openShip:'ship:view',settings:'admin',clearSample:'admin',setRole:'admin',delRole:'admin',addRole:'admin',dismissReq:'admin',approveDevice:'admin',exportXlsx:'reports',copyReport:'reports:view',openLedger:'inv:view',exportLedger:'reports',addCount:'count',openCount:'count:view',saveCount:'count',postCount:'count',cancelCount:'count',exportCountXlsx:'count:view',applyRevalPct:'reval',postReval:'reval',openReval:'reval:view',exportRevalXlsx:'reval:view'};
 const COL_MOD={suppliers:'suppliers',items:'inv',pos:'pos',shipments:'ship',warehouses:'wh',depts:'dept'};
 const actAllowed=(name,d)=>{let spec=name==='del'?COL_MOD[d.col]:ACT_MOD[name];if(!spec)return true;const[m,v]=spec.split(':');return v==='view'?(canSee(m)||canEditMod(m)):canEditMod(m)};
 document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(!b)return;const name=b.dataset.a,a=ACT[name];if(!a)return;
