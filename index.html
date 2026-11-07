@@ -444,9 +444,10 @@ const ROLES={
   warehouse:{t:'المخازن',see:['dash','pos','grn','qa','inv','issue','rret','iret','wh','dept','count','sales','activity'],edit:['grn','inv','issue','rret','iret','wh','count']},
   quality:{t:'الجودة',see:['dash','suppliers','grn','qa','inv','rret','wh','count','activity'],edit:['qa']},
   shipping:{t:'الشحن',see:['dash','inv','ship','sales','activity'],edit:['ship']},
+  clerk:{t:'إدخال الاستلام والصرف',see:['dash','pos','grn','issue'],edit:['grn','issue']},
   viewer:{t:'متابعة فقط',see:'*',edit:[]}
 };
-const ASSIGNABLE=['manager','purchasing','warehouse','quality','shipping','viewer'];
+const ASSIGNABLE=['manager','purchasing','warehouse','quality','shipping','clerk','viewer'];
 function myRole(){if(mode!=='live')return'admin';if(me.owner||me.editor)return'admin';const r=me.id&&S.roles.find(x=>x.id===me.id);return r&&ROLES[r.role]&&r.role!=='admin'?r.role:null}
 const roleDef=()=>ROLES[myRole()]||{see:['dash'],edit:[]};
 function canSee(v){if(v==='users')return myRole()==='admin';const r=roleDef();return r.see==='*'||r.see.includes(v)}
@@ -540,7 +541,7 @@ function evalCalc(s){
 function runCalc(t){const v=evalCalc(t.value);if(v!=null&&String(v)!==t.value.trim()){t.value=v;t.dispatchEvent(new Event('input',{bubbles:true}));t.dispatchEvent(new Event('change',{bubbles:true}))}}
 document.addEventListener('blur',e=>{if(e.target.matches&&e.target.matches('input[data-calc]'))runCalc(e.target)},true);
 document.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.matches&&e.target.matches('input[data-calc]')){e.preventDefault();runCalc(e.target)}});
-const hideBalance=()=>!!cfg().blindStock&&!canEditMod('approve');
+const hideBalance=()=>myRole()==='clerk'||(!!cfg().blindStock&&!canEditMod('approve'));
 // a saved link only overrides the built-in one when it points somewhere suppliers can reach (never a local test address)
 const localUrl=u=>/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)|^file:|^data:/i.test(String(u||'').trim());
 const formUrl=()=>{const s=String(cfg().formUrl||'').trim();return(s&&!localUrl(s)?s:DEFAULT_FORM_URL).split('#')[0]};
@@ -760,13 +761,16 @@ function renderDash(){
       <div><em>خطوة 3</em><b>اطلب عروض أسعار</b><span>قارن بين الموردين بالسعر والمدة والتقييم، ورسّي على الأنسب.</span><button class="btn w" data-a="addRfq">طلب عرض سعر</button></div>
       <div><em>خطوة 4</em><b>استلم وافحص واشحن</b><span>الاستلام بيروح لفحص الجودة، والمقبول بس بيدخل المخزون.</span></div>
     </div>`;
+  const hb=hideBalance();
   const att=[];
-  S.pos.filter(p=>poStatus(p)==='pending').forEach(p=>att.push({t:'bad',b:`أمر شراء ${p.no} محتاج اعتماد`,s:`${supName(p.supplierId)} · ${money(poValue(p))} · طلبه ${uLabel(p.createdBy)}`,a:'openPo',id:p.id,l:'راجع واعتمد',only:'approve'}));
+  S.pos.filter(p=>poStatus(p)==='pending').forEach(p=>att.push({t:'bad',b:`أمر شراء ${p.no} محتاج اعتماد`,s:`${supName(p.supplierId)}${hb?'':' · '+money(poValue(p))} · طلبه ${uLabel(p.createdBy)}`,a:'openPo',id:p.id,l:'راجع واعتمد',only:'approve'}));
   S.pos.filter(p=>poStatus(p)==='rejected').forEach(p=>att.push({t:'bad',b:`الإدارة رفضت أمر الشراء ${p.no}`,s:`${p.rejectReason||'من غير سبب مكتوب'} · ${supName(p.supplierId)}`,a:'editPo',id:p.id,l:'عدّل وابعت تاني'}));
-  S.pos.filter(p=>poStatus(p)==='approved').forEach(p=>att.push({t:'info',b:`أمر الشراء ${p.no} اتعتمد`,s:`${supName(p.supplierId)} · ${money(poValue(p))} · جاهز يتبعت للمورد`,a:'sendPo',id:p.id,l:'اتبعت للمورد'}));
+  S.pos.filter(p=>poStatus(p)==='approved').forEach(p=>att.push({t:'info',b:`أمر الشراء ${p.no} اتعتمد`,s:`${supName(p.supplierId)}${hb?'':' · '+money(poValue(p))} · جاهز يتبعت للمورد`,a:'sendPo',id:p.id,l:'اتبعت للمورد'}));
   overdue.forEach(p=>att.push({t:'bad',b:`أمر شراء ${p.no} متأخر ${daysBetween(p.expected,today())} يوم`,s:`${supName(p.supplierId)} · كان المفروض يوصل ${p.expected}`,a:'openPo',id:p.id,l:'افتح'}));
+  if(!hb){
   items.filter(i=>stockState(i)[1]==='bad').forEach(i=>att.push({t:'bad',b:`${i.name}: ${stockState(i)[0]}`,s:`الرصيد ${num(i.onHand,2)} ${i.unit||''} · مخزون الأمان ${num(i.safety)} · في الطريق ${num(onOrder(i.id))}`,a:'rfqFromItem',id:i.id,l:'اطلب عرض سعر'}));
   items.filter(i=>stockState(i)[1]==='warn').forEach(i=>att.push({t:'warn',b:`${i.name} وصل حد إعادة الطلب`,s:`الرصيد ${num(i.onHand,2)} من ${num(i.reorder)} ${i.unit||''} · في الطريق ${num(onOrder(i.id))}`,a:'rfqFromItem',id:i.id,l:'اطلب عرض سعر'}));
+  }
   pend.forEach(x=>att.push({t:'warn',b:`لوط ${x.lot} منتظر فحص`,s:`${itemName(x.itemId)} · ${num(x.qty)} ${itemUnit(x.itemId)} من ${supName(x.supplierId)}`,a:'inspect',id:x.id,l:'افحص'}));
   S.inspections.filter(x=>x.status==='done'&&x.accepted>0&&x.expiry&&x.expiry<=addDays(today(),7)).forEach(x=>{const d=daysBetween(today(),x.expiry);att.push({t:d<0?'bad':'warn',b:d<0?`لوط ${x.lot} فاتت صلاحيته من ${-d} يوم`:d===0?`لوط ${x.lot} صلاحيته تخلص النهاردة`:`لوط ${x.lot} صلاحيته تخلص خلال ${d} يوم`,s:`${itemName(x.itemId)} · ${num(x.accepted,2)} ${itemUnit(x.itemId)} · صلاحية حتى ${x.expiry}`,a:'openGrn',id:x.grn,l:'افتح الاستلام'})});
   const rj={};pendingRej().forEach(x=>{rj[x.supplierId]=rj[x.supplierId]||{q:0,n:0};rj[x.supplierId].q+=x.rejected-(x.returned||0);rj[x.supplierId].n++});
@@ -781,18 +785,18 @@ function renderDash(){
   return head('نظرة عامة',`النهارده ${today()}`,qb.map((x,i)=>`<button class="btn${i===qb.length-1?' pri':''}" data-a="${x[0]}">${x[1]}</button>`).join(''))+
   (hasSample&&canEditMod('admin')?`<div class="note"><span>الصفحة فيها بيانات مثال (موردين وأصناف وهمية) عشان تشوف المنظومة شغالة. امسحها لما تبدأ تدخل بياناتك.</span><button class="btn sm danger w" data-a="clearSample">امسح بيانات المثال</button></div>`:'')+
   `<div class="kpis">
-    <div class="kpi"><small>قيمة المخزون</small><b>${money(sum(items,i=>i.onHand*i.cost))}</b><span>${items.length} صنف مسجل</span></div>
-    <div class="kpi ${low.length?'warn':''}"><small>تحت حد الطلب</small><b>${low.length}</b><span>صنف محتاج توريد</span></div>
-    <div class="kpi ${overdue.length?'bad':''}"><small>أوامر شراء مفتوحة</small><b>${openPO.length}</b><span>${money(sum(openPO,poValue))}${overdue.length?` · ${overdue.length} متأخر`:''}</span></div>
+    ${hb?'':`<div class="kpi"><small>قيمة المخزون</small><b>${money(sum(items,i=>i.onHand*i.cost))}</b><span>${items.length} صنف مسجل</span></div>
+    <div class="kpi ${low.length?'warn':''}"><small>تحت حد الطلب</small><b>${low.length}</b><span>صنف محتاج توريد</span></div>`}
+    <div class="kpi ${overdue.length?'bad':''}"><small>أوامر شراء مفتوحة</small><b>${openPO.length}</b><span>${hb?'':money(sum(openPO,poValue))}${overdue.length?` · ${overdue.length} متأخر`:''}</span></div>
     <div class="kpi"><small>عروض أسعار مفتوحة</small><b>${openRfq.length}</b><span>${sum(openRfq,r=>(r.quotes||[]).length)} عرض مستلم</span></div>
     <div class="kpi ${pend.length?'warn':''}"><small>منتظر فحص جودة</small><b>${pend.length}</b><span>${num(sum(pend,x=>x.qty))} وحدة في منطقة الحجر</span></div>
     <div class="kpi"><small>شحنات في الطريق</small><b>${moving.length}</b><span>${S.shipments.filter(s=>s.status==='prep').length} تحت التجهيز</span></div>
   </div>
   <div class="grid2">
     <section class="panel"><h2>محتاج انتباهك <small>${att.length} بند</small></h2>${att.length?`<ul class="alist">${att.slice(0,10).map(x=>`<li><i class="sev ${x.t}"></i><div class="tx"><b>${esc(x.b)}</b><span>${esc(x.s)}</span></div><button class="btn sm w" data-a="${x.a}" data-id="${x.id}">${x.l}</button></li>`).join('')}</ul>`:`<div class="empty"><b>كله تمام</b>مفيش تأخيرات ولا نواقص ولا فحوصات معلقة.</div>`}</section>
-    <section class="panel"><h2>تقييم الموردين <small>جودة 60% · مواعيد 40%</small></h2>${tbl(['المورد',['الجودة','num'],['المواعيد','num'],'التقييم'],sups.slice(0,8).map(({s,st})=>`<tr class="click" data-a="editSupplier" data-id="${s.id}"><td>${esc(s.name)}<span class="sub">${SUP_CAT[s.category]||''}</span></td><td class="num">${pct(st.quality)}</td><td class="num">${pct(st.onTime)}</td><td>${gradeHtml(st.grade)}</td></tr>`),'لسه مفيش موردين.')}</section>
+    ${hb?'':`<section class="panel"><h2>تقييم الموردين <small>جودة 60% · مواعيد 40%</small></h2>${tbl(['المورد',['الجودة','num'],['المواعيد','num'],'التقييم'],sups.slice(0,8).map(({s,st})=>`<tr class="click" data-a="editSupplier" data-id="${s.id}"><td>${esc(s.name)}<span class="sub">${SUP_CAT[s.category]||''}</span></td><td class="num">${pct(st.quality)}</td><td class="num">${pct(st.onTime)}</td><td>${gradeHtml(st.grade)}</td></tr>`),'لسه مفيش موردين.')}</section>`}
   </div>
-  <section class="panel"><h2>آخر حركات المخزون</h2>${tbl(['التاريخ','الصنف','الحركة',['الكمية','num'],'المرجع'],mv.map(m=>`<tr><td class="code">${m.date}</td><td>${esc(itemName(m.itemId))}</td><td>${MV_T[m.type]||m.type}</td><td class="num" style="color:var(--${m.qty<0?'bad':'ok'})">${m.qty>0?'+':''}${num(m.qty,2)}</td><td>${code(m.ref)}</td></tr>`),'مفيش حركات لسه.')}</section>`;
+  ${hb?'':`<section class="panel"><h2>آخر حركات المخزون</h2>${tbl(['التاريخ','الصنف','الحركة',['الكمية','num'],'المرجع'],mv.map(m=>`<tr><td class="code">${m.date}</td><td>${esc(itemName(m.itemId))}</td><td>${MV_T[m.type]||m.type}</td><td class="num" style="color:var(--${m.qty<0?'bad':'ok'})">${m.qty>0?'+':''}${num(m.qty,2)}</td><td>${code(m.ref)}</td></tr>`),'مفيش حركات لسه.')}</section>`}`;
 }
 
 /* ---------- access gate & users ---------- */
@@ -1161,11 +1165,11 @@ function grnForm(poId){
   });
 }
 function openGrn(id){
-  const g=byId('grns',id);if(!g)return;const ins=S.inspections.filter(x=>x.grn===g.no);
-  const rows=(g.lines||[]).map(l=>{const x=ins.find(i=>i.itemId===l.itemId);let st=chip('—','mute');if(x)st=x.status==='pending'?chip('منتظر فحص','warn'):chip(`مقبول ${num(x.accepted,2)}${x.rejected?` · مرفوض ${num(x.rejected,2)}`:''}`,x.rejected?'bad':'ok');return`<tr><td>${esc(itemName(l.itemId))}</td><td class="num">${num(l.qty,2)} ${esc(itemUnit(l.itemId))}</td><td class="num">${money(l.price)}</td><td class="num">${money(l.qty*l.price)}</td><td>${st}</td><td>${x&&x.status==='pending'?`<button class="btn sm pri w" data-a="inspect" data-id="${x.id}">افحص</button>`:''}</td></tr>`});
+  const g=byId('grns',id);if(!g)return;const ins=S.inspections.filter(x=>x.grn===g.no);const hb=hideBalance();
+  const rows=(g.lines||[]).map(l=>{const x=ins.find(i=>i.itemId===l.itemId);let st=chip('—','mute');if(x)st=x.status==='pending'?chip('منتظر فحص','warn'):chip(`مقبول ${num(x.accepted,2)}${x.rejected?` · مرفوض ${num(x.rejected,2)}`:''}`,x.rejected?'bad':'ok');return hb?`<tr><td>${esc(itemName(l.itemId))}</td><td class="num">${num(l.qty,2)} ${esc(itemUnit(l.itemId))}</td><td>${st}</td><td>${x&&x.status==='pending'?`<button class="btn sm pri w" data-a="inspect" data-id="${x.id}">افحص</button>`:''}</td></tr>`:`<tr><td>${esc(itemName(l.itemId))}</td><td class="num">${num(l.qty,2)} ${esc(itemUnit(l.itemId))}</td><td class="num">${money(l.price)}</td><td class="num">${money(l.qty*l.price)}</td><td>${st}</td><td>${x&&x.status==='pending'?`<button class="btn sm pri w" data-a="inspect" data-id="${x.id}">افحص</button>`:''}</td></tr>`});
   const rejPend=ins.some(x=>(+x.rejected||0)-(+x.returned||0)>0);
   openDrawer(`إذن استلام ${g.no}`,statusbar([['rec','مستلم'],['qc','تحت الفحص'],['done','مفحوص']],ins.some(x=>x.status==='pending')?'qc':ins.length?'done':'rec')+smartRow([...(g.poId?[sb('purchase','أمر الشراء',esc(g.poNo),'pos',g.poNo,'poFilter:all')]:[]),sb('quality','لوطات منتظرة فحص',ins.filter(x=>x.status==='pending').length,'qa','','qaTab:pending')])+`<div class="kv"><div><small>المورد</small><b>${esc(supName(g.supplierId))}</b></div><div><small>التاريخ</small><b>${g.date}</b></div><div><small>أمر الشراء</small><b>${g.poNo?code(g.poNo):'استلام مباشر'}</b></div><div><small>إذن تسليم المورد</small><b>${esc(g.dn||'—')}</b></div><div><small>اللوط</small><b>${code(g.lot)}</b></div>${g.expiry?`<div><small>تاريخ انتهاء الصلاحية</small><b>${daysBetween(today(),g.expiry)<0?chip(g.expiry+' (فاتت)','bad'):daysBetween(today(),g.expiry)<=7?chip(g.expiry,'warn'):g.expiry}</b></div>`:''}<div><small>المستلم</small><b>${esc(g.by||'—')}</b></div></div>
-  <div class="panel">${tbl(['الصنف',['الكمية','num'],['سعر الوحدة','num'],['القيمة','num'],'الفحص',''],rows,'—')}</div>
+  <div class="panel">${tbl(hb?['الصنف',['الكمية','num'],'الفحص','']:['الصنف',['الكمية','num'],['سعر الوحدة','num'],['القيمة','num'],'الفحص',''],rows,'—')}</div>
   ${g.notes?`<div class="note"><span>${esc(g.notes)}</span></div>`:''}
   ${histHtml(g)}
   <div class="actions w"><div class="gap">${rejPend?`<button class="btn danger" data-a="rretNew" data-id="${g.supplierId}">رجّع المرفوض للمورد</button>`:''}${g.poId?`<button class="btn" data-a="openPo" data-id="${g.poId}">افتح أمر الشراء</button>`:''}</div></div>`);
@@ -1176,13 +1180,14 @@ const issueRemain=s=>sum(s.lines||[],l=>Math.max(0,l.qty-(l.returned||0)));
 const ISSUE_K={branch:['فروع','فرع'],owner:['ملاك','ملاك'],ops:['إنتاجي وخدمي','إنتاج/خدمة']};
 const issueKindGrp=n=>{const k=deptKind(n);return k==='branch'?'branch':k==='owner'?'owner':'ops'};
 function renderIssue(){
+  const hb=hideBalance();
   const list=S.issues.filter(s=>ui.issueKind==='all'||issueKindGrp(s.dept)===ui.issueKind).filter(s=>match(s.no,s.dept,s.wo,s.by,...(s.lines||[]).map(l=>itemName(l.itemId)))).sort((a,b)=>(b.ts||0)-(a.ts||0));
   const mth=today().slice(0,7),thisM=S.issues.filter(s=>(s.date||'').startsWith(mth));
-  const row=s=>{const ret=sum(s.lines||[],l=>l.returned||0),g=issueKindGrp(s.dept);return`<tr class="click" data-a="openIssue" data-id="${s.id}"><td>${code(s.no)}</td><td class="code">${s.date}</td><td>${esc(s.dept)} ${g==='branch'?chip('فرع','info'):g==='owner'?chip('ملاك','mute'):''}</td><td>${s.wo?code(s.wo):'—'}</td><td>${linesSummary(s.lines)}</td><td class="num">${money(sum(s.lines||[],l=>l.qty*l.cost))}</td><td>${ret?chip(`مرتجع ${num(ret,2)}`,'info'):'—'}</td><td>${whoH(s.createdBy)}</td></tr>`};
+  const row=s=>{const ret=sum(s.lines||[],l=>l.returned||0),g=issueKindGrp(s.dept);return`<tr class="click" data-a="openIssue" data-id="${s.id}"><td>${code(s.no)}</td><td class="code">${s.date}</td><td>${esc(s.dept)} ${g==='branch'?chip('فرع','info'):g==='owner'?chip('ملاك','mute'):''}</td><td>${s.wo?code(s.wo):'—'}</td><td>${linesSummary(s.lines)}</td><td class="num">${hb?BAL_HIDE:money(sum(s.lines||[],l=>l.qty*l.cost))}</td><td>${ret?chip(`مرتجع ${num(ret,2)}`,'info'):'—'}</td><td>${whoH(s.createdBy)}</td></tr>`};
   const byDept={};thisM.forEach(s=>byDept[s.dept]=(byDept[s.dept]||0)+sum(s.lines||[],l=>l.qty*l.cost));
   return head('صرف بضاعة','أذون صرف من المخزن للإنتاج والخدمات، وتسليم للفروع ومسحوبات الملاك. كله بيخصم من المخزون بالتكلفة الحالية.',seg('issueKind',[['all','الكل'],['ops','إنتاج وخدمات'],['branch','تسليم للفروع'],['owner','مسحوبات الملاك']])+searchBox('رقم إذن، جهة، أمر تشغيل، صنف')+`<button class="btn w" data-a="issueBranch">تسليم لفرع</button><button class="btn pri w" data-a="issueNew">جديد</button>`)+
-  `<div class="kpis"><div class="kpi"><small>أذون صرف الشهر ده</small><b>${thisM.length}</b><span>${money(sum(thisM,s=>sum(s.lines||[],l=>l.qty*l.cost)))}</span></div>${Object.entries(byDept).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([d,v])=>`<div class="kpi"><small>${esc(d)}${issueKindGrp(d)==='branch'?' (فرع)':''}</small><b>${money(v)}</b><span>تكلفة منصرفة الشهر ده</span></div>`).join('')}</div>
-  <section class="panel">${gtbl(['رقم الإذن','التاريخ','الجهة','أمر التشغيل','الأصناف',['التكلفة','num'],'مرتجع','بواسطة'],list,row,S.issues.length?'مفيش نتايج للبحث ده.':'<b>مفيش أذون صرف لسه</b>اصرف خامات لأمر تشغيل من هنا أو من المخزون.')}</section>`;
+  (hb?'':`<div class="kpis"><div class="kpi"><small>أذون صرف الشهر ده</small><b>${thisM.length}</b><span>${money(sum(thisM,s=>sum(s.lines||[],l=>l.qty*l.cost)))}</span></div>${Object.entries(byDept).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([d,v])=>`<div class="kpi"><small>${esc(d)}${issueKindGrp(d)==='branch'?' (فرع)':''}</small><b>${money(v)}</b><span>تكلفة منصرفة الشهر ده</span></div>`).join('')}</div>`)+
+  `<section class="panel">${gtbl(['رقم الإذن','التاريخ','الجهة','أمر التشغيل','الأصناف',['التكلفة','num'],'مرتجع','بواسطة'],list,row,S.issues.length?'مفيش نتايج للبحث ده.':'<b>مفيش أذون صرف لسه</b>اصرف خامات لأمر تشغيل من هنا أو من المخزون.',hb?()=>BAL_HIDE:undefined)}</section>`;
 }
 function issueForm(itemId,kind){
   if(!S.items.length){toast('أضف صنف الأول','bad');return}
@@ -1211,14 +1216,14 @@ function issueForm(itemId,kind){
     for(const[iid,q]of Object.entries(need))await addMovement(iid,-q,'issue',no,[dept,wo].filter(Boolean).join(' · '));
     toast(isBranch?`اتسلّم إذن ${no} للفرع`:`اتصرف إذن ${no}`);
   },body=>{
-    const av=body.querySelector('#avail small');const upd=()=>{const ids=[...body.querySelectorAll('[name=li_item]')].map(s=>s.value).filter(Boolean);av.textContent=ids.length?'المتاح: '+[...new Set(ids)].map(id=>{const i=byId('items',id);return`${i.name} ${num(i.onHand,2)} ${i.unit||''}`}).join(' · '):''};
+    const av=body.querySelector('#avail small');const hb=hideBalance();const upd=()=>{const ids=[...body.querySelectorAll('[name=li_item]')].map(s=>s.value).filter(Boolean);av.textContent=ids.length?'المتاح: '+[...new Set(ids)].map(id=>{const i=byId('items',id);return hb?`${i.name} ${BAL_HIDE}`:`${i.name} ${num(i.onHand,2)} ${i.unit||''}`}).join(' · '):''};
     body.addEventListener('change',upd);upd();
   });
 }
 function openIssue(id){
-  const s=byId('issues',id);if(!s)return;
-  openDrawer(`إذن صرف ${s.no}`,statusbar([['done','مصروف'],['ret','عليه مرتجع']],sum(s.lines||[],l=>l.returned||0)>0?'ret':'done',issueRemain(s)>0?`<button class="btn" data-a="iretNew" data-id="${s.id}">مرتجع من الإذن ده</button>`:'')+`<div class="kv"><div><small>الجهة</small><b>${esc(s.dept)}</b></div><div><small>التاريخ</small><b>${s.date}</b></div><div><small>أمر التشغيل</small><b>${s.wo?code(s.wo):'—'}</b></div><div><small>المستلم</small><b>${esc(s.by||'—')}</b></div><div><small>التكلفة</small><b>${money(sum(s.lines||[],l=>l.qty*l.cost))}</b></div></div>
-  <div class="panel">${tbl(['الصنف',['المنصرف','num'],['المرتجع','num'],['تكلفة الوحدة','num'],['القيمة','num']],(s.lines||[]).map(l=>`<tr><td>${esc(itemName(l.itemId))}</td><td class="num">${num(l.qty,2)} ${esc(itemUnit(l.itemId))}</td><td class="num">${num(l.returned||0,2)}</td><td class="num">${money(l.cost)}</td><td class="num">${money(l.qty*l.cost)}</td></tr>`),'—')}</div>
+  const s=byId('issues',id);if(!s)return;const hb=hideBalance();
+  openDrawer(`إذن صرف ${s.no}`,statusbar([['done','مصروف'],['ret','عليه مرتجع']],sum(s.lines||[],l=>l.returned||0)>0?'ret':'done',issueRemain(s)>0?`<button class="btn" data-a="iretNew" data-id="${s.id}">مرتجع من الإذن ده</button>`:'')+`<div class="kv"><div><small>الجهة</small><b>${esc(s.dept)}</b></div><div><small>التاريخ</small><b>${s.date}</b></div><div><small>أمر التشغيل</small><b>${s.wo?code(s.wo):'—'}</b></div><div><small>المستلم</small><b>${esc(s.by||'—')}</b></div>${hb?'':`<div><small>التكلفة</small><b>${money(sum(s.lines||[],l=>l.qty*l.cost))}</b></div>`}</div>
+  <div class="panel">${tbl(hb?['الصنف',['المنصرف','num'],['المرتجع','num']]:['الصنف',['المنصرف','num'],['المرتجع','num'],['تكلفة الوحدة','num'],['القيمة','num']],(s.lines||[]).map(l=>hb?`<tr><td>${esc(itemName(l.itemId))}</td><td class="num">${num(l.qty,2)} ${esc(itemUnit(l.itemId))}</td><td class="num">${num(l.returned||0,2)}</td></tr>`:`<tr><td>${esc(itemName(l.itemId))}</td><td class="num">${num(l.qty,2)} ${esc(itemUnit(l.itemId))}</td><td class="num">${num(l.returned||0,2)}</td><td class="num">${money(l.cost)}</td><td class="num">${money(l.qty*l.cost)}</td></tr>`),'—')}</div>
   ${s.notes?`<div class="note"><span>${esc(s.notes)}</span></div>`:''}
   ${histHtml(s)}`);
 }
