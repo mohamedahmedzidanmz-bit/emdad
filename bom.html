@@ -135,7 +135,7 @@ input.in.bad{border-color:var(--bad);background:var(--bad-soft)}
   </div>
 </header>
 <main id="app" aria-live="polite"><div class="empty"><b>بنحمّل البيانات…</b>قوائم المواد والأصناف هتظهر هنا.</div></main>
-<datalist id="dl-units"><option value="كجم"><option value="جم"><option value="لتر"><option value="مل"><option value="قطعة"><option value="علبة"><option value="كرتونة"><option value="لفة"><option value="متر"></datalist>
+<datalist id="dl-units"><option value="كجم"><option value="جم"><option value="لتر"><option value="مل"><option value="قطعة"><option value="علبة"><option value="كرتونة"><option value="لفة"><option value="متر"><option value="طن"><option value="شيكارة"><option value="جركن"></datalist>
 <datalist id="dl-items"></datalist>
 <datalist id="dl-products"></datalist>
 
@@ -147,11 +147,11 @@ input.in.bad{border-color:var(--bad);background:var(--bad-soft)}
    Inside Claude this is the artifact db. Next to Emdad's backend.js it is Emdad's Supabase "docs" table. */
 const ITEM_T={raw:'خامات',component:'مكونات',packaging:'تغليف',semi:'نصف مصنّع',finished:'منتج تام',supplies:'مستلزمات وصيانة'};
 const ST={draft:'مسودة',approved:'معتمدة',archived:'مؤرشفة'};
-const COLS=['items','boms'];
 const LINKED=window.BOM_LINKED===true; // set by build.ps1 next to Emdad: items and stock belong to Emdad, read-only here
 document.getElementById('toEmdad').hidden=!LINKED;
-const S={items:[],boms:[]};
-let db=null,mode='local',loaded=new Set(),view={tab:'boms',id:null},q='',fType='',fSt='';
+const COLS=LINKED?['items','boms','rfqs']:['items','boms']; // rfqs: Emdad's quote requests, so shortages can open one
+const S={items:[],boms:[],rfqs:[]};
+let db=null,meId='',mode='local',loaded=new Set(),view={tab:'boms',id:null},q='',fType='',fSt='';
 
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -178,8 +178,8 @@ function localDb(){ // same surface as the real db, kept in this browser only
 }
 async function put(col,id,data,act){
   const prev=byId(col,id);const t=now();
-  const body=Object.assign({},data,{createdAt:prev?.createdAt||t,updatedAt:t});
-  if(act){body.hist=[...(prev?.hist||[]),{a:act,t,u:''}].slice(-30)}else if(prev?.hist)body.hist=prev.hist;
+  const body=Object.assign({},data,{createdAt:prev?.createdAt||t,createdBy:prev?prev.createdBy||'':meId,updatedAt:t,updatedBy:meId});
+  if(act){body.hist=[...(prev?.hist||[]),{a:act,t,u:meId}].slice(-30)}else if(prev?.hist)body.hist=prev.hist;
   delete body.id;
   try{await db.collection(col).doc(id).set(body)}catch(e){toast(e?.code==='invalid_argument'?'مش مسموحلك تعدّل هنا. اطلب صلاحية Contributor.':e?.code==='quota_exceeded'?'المساحة اتملت. امسح سجلات قديمة.':'الحفظ ما تمّش. جرّب تاني.','bad');throw e}
 }
@@ -188,7 +188,15 @@ async function del(col,id){try{await db.collection(col).doc(id).delete()}catch(e
 /* ---------- BOM math ---------- */
 const activeBom=itemId=>{const l=S.boms.filter(b=>b.itemId===itemId&&b.status==='approved');return l.sort((a,b)=>b.version-a.version)[0]||null};
 const bomsOf=itemId=>S.boms.filter(b=>b.itemId===itemId).sort((a,b)=>b.version-a.version);
-const lineNeed=l=>n(l.qty)*(1+n(l.scrap)/100);
+/* units: a line can be written in a different unit than the item is stocked in (recipe in جم, stock in كجم or شيكارة).
+   l.conv = how many line units make one stock unit. Weight and volume convert by themselves; anything else the user types once. */
+const UNIT_N={'كجم':'كجم','كيلو':'كجم','كيلوجرام':'كجم','كغ':'كجم','kg':'كجم','جم':'جم','جرام':'جم','غرام':'جم','g':'جم','طن':'طن','لتر':'لتر','l':'لتر','مل':'مل','ملي':'مل','مللي':'مل','ml':'مل'};
+const UNIT_F={'كجم':['w',1],'جم':['w',0.001],'طن':['w',1000],'لتر':['v',1],'مل':['v',0.001]};
+const normU=u=>{const s=String(u||'').trim().replace(/\.$/,'');return UNIT_N[s.toLowerCase()]||s};
+const autoConv=(stockU,lineU)=>{const a=normU(stockU),b=normU(lineU);if(!b||a===b)return 1;const fa=UNIT_F[a],fb=UNIT_F[b];return fa&&fb&&fa[0]===fb[0]?fa[1]/fb[1]:null};
+const lineConv=l=>{const it=byId('items',l.itemId);if(!it)return 1;return autoConv(it.unit,l.unit)||n(l.conv)||1};
+const needsConv=l=>{const it=byId('items',l.itemId);return !!it&&autoConv(it.unit,l.unit)===null};
+const lineNeed=l=>n(l.qty)*(1+n(l.scrap)/100)/lineConv(l); // in stock units
 function bomCost(b,seen=new Set()){ // cost of one batch; semi-finished lines use their own approved BOM's unit cost when they have one
   let total=0;const rows=(b.lines||[]).map(l=>{const it=byId('items',l.itemId);let uc=n(it?.cost);
     const sub=it&&activeBom(it.id);if(sub&&!seen.has(sub.id)){const s2=new Set(seen);s2.add(b.id);uc=bomCost(sub,s2).unit}
@@ -271,12 +279,15 @@ function bomForm(id){
   const d=draft,it=byId('items',d.itemId),locked=d.status!=='draft'&&!isNew;
   const c=bomCost(Object.assign({id:'_d'},d));
   const vers=it?bomsOf(it.id):[];
-  const lines=d.lines.map((l,k)=>{const li=byId('items',l.itemId),row=c.rows[k];return`<tr>
+  const lines=d.lines.map((l,k)=>{const li=byId('items',l.itemId),row=c.rows[k],lu=l.unit||li?.unit||'',cv=lineConv(l);
+    const conv=li&&needsConv(l)?`<span class="sub">1 ${esc(li.unit)} = ${locked?fmt(l.conv,4):`<input class="in num li-conv" id="li-conv-${k}" inputmode="decimal" data-k="${k}" value="${esc(l.conv||'')}" style="width:70px;padding:3px 6px" aria-label="تحويل الوحدة">`} ${esc(lu)}</span>`:'';
+    const eq=li&&cv!==1&&n(l.qty)?`<span class="sub">= ${fmt(n(l.qty)/cv,4)} ${esc(li.unit)}</span>`:'';
+    return`<tr>
     <td class="w-item">${locked?esc(itemLabel(li)||'—'):`<input class="in li-item" id="li-item-${k}" list="dl-items" data-k="${k}" value="${esc(itemLabel(li))}" placeholder="اكتب اسم أو كود الصنف" aria-label="الصنف">`}${li&&activeBom(li.id)?'<span class="sub">نصف مصنّع، ليه قائمة معتمدة</span>':''}</td>
-    <td class="num w-n">${locked?fmt(l.qty,4):`<input class="in num li-qty" id="li-qty-${k}" inputmode="decimal" data-k="${k}" value="${esc(l.qty)}" aria-label="الكمية">`}</td>
-    <td>${esc(li?.unit||'')}</td>
+    <td class="num w-n">${locked?fmt(l.qty,4):`<input class="in num li-qty" id="li-qty-${k}" inputmode="decimal" data-k="${k}" value="${esc(l.qty)}" aria-label="الكمية">`}${eq}</td>
+    <td>${locked?esc(lu):`<input class="in li-unit" id="li-unit-${k}" list="dl-units" data-k="${k}" value="${esc(lu)}" style="width:84px" aria-label="الوحدة">`}${conv}</td>
     <td class="num w-n">${locked?fmt(l.scrap):`<input class="in num li-scrap" id="li-scrap-${k}" inputmode="decimal" data-k="${k}" value="${esc(l.scrap)}" aria-label="هالك ٪">`}</td>
-    <td class="num">${money(row?.uc)}</td>
+    <td class="num">${money(row?.uc)}${li?`<span class="sub">لكل ${esc(li.unit)}</span>`:''}</td>
     <td class="num">${money(row?.c)}</td>
     <td>${locked?'':`<button class="x" data-act="rmLine" data-k="${k}" aria-label="شيل السطر">✕</button>`}</td></tr>`}).join('');
   return `<div class="crumb"><button data-act="back">قوائم المواد</button> / ${isNew?'جديدة':esc(d.code)}</div>
@@ -308,7 +319,11 @@ function syncDraftFromInputs(){
   const fi=$('#f-item');if(fi){const it=resolveItem(fi.value);draft.itemId=it?it.id:''}
   const fy=$('#f-yield');if(fy)draft.yieldQty=fy.value;
   const fn=$('#f-notes');if(fn)draft.notes=fn.value;
-  document.querySelectorAll('.li-item').forEach(el=>{const it=resolveItem(el.value);draft.lines[+el.dataset.k].itemId=it?it.id:'';draft.lines[+el.dataset.k]._txt=el.value});
+  document.querySelectorAll('.li-unit').forEach(el=>draft.lines[+el.dataset.k].unit=normU(el.value));
+  document.querySelectorAll('.li-conv').forEach(el=>draft.lines[+el.dataset.k].conv=el.value);
+  document.querySelectorAll('.li-item').forEach(el=>{const l=draft.lines[+el.dataset.k],it=resolveItem(el.value);
+    if(it&&it.id!==l.itemId){l.unit=normU(it.unit);l.conv=''} // new item: start from its stock unit
+    l.itemId=it?it.id:'';l._txt=el.value});
   document.querySelectorAll('.li-qty').forEach(el=>draft.lines[+el.dataset.k].qty=el.value);
   document.querySelectorAll('.li-scrap').forEach(el=>draft.lines[+el.dataset.k].scrap=el.value);
 }
@@ -319,7 +334,9 @@ async function saveBom(status){
   if(n(d.yieldQty)<=0){toast('ناتج الباتش لازم يكون أكبر من صفر.','bad');return}
   const bad=d.lines.findIndex(l=>(l._txt||l.itemId||l.qty)&&(!l.itemId||n(l.qty)<=0));
   if(bad>=0){toast(`السطر ${bad+1}: اختار صنف موجود واكتب كمية أكبر من صفر.`,'bad');return}
-  const lines=d.lines.filter(l=>l.itemId).map(l=>({itemId:l.itemId,qty:n(l.qty),scrap:n(l.scrap)}));
+  const nc=d.lines.findIndex(l=>l.itemId&&needsConv(l)&&n(l.conv)<=0);
+  if(nc>=0){const l=d.lines[nc],it=byId('items',l.itemId);toast(`السطر ${nc+1}: اكتب الـ${it.unit} الواحد فيه كام ${l.unit}.`,'bad');$('#li-conv-'+nc)?.classList.add('bad');return}
+  const lines=d.lines.filter(l=>l.itemId).map(l=>{const it=byId('items',l.itemId),u=normU(l.unit||it.unit),o={itemId:l.itemId,qty:n(l.qty),scrap:n(l.scrap),unit:u};if(needsConv(l))o.conv=n(l.conv);return o});
   if(!lines.length){toast('ضيف مكون واحد على الأقل.','bad');return}
   if(lines.some(l=>l.itemId===it.id)){toast('المنتج مينفعش يبقى مكوّن في نفسه.','bad');return}
   let id=d._for,version=d.version;
@@ -351,12 +368,16 @@ function runCalc(){
   const rows=r.leaves.map(x=>{const oh=n(x.it?.onHand),short=Math.max(0,x.need-oh);return{...x,oh,short,cost:x.need*n(x.it?.cost)}}).sort((a,b)=>b.short-a.short||b.cost-a.cost);
   lastCalc={it,qty,rows,mids:r.mids};
   const tot=rows.reduce((s,x)=>s+x.cost,0),shorts=rows.filter(x=>x.short>0).length;
+  const toAsk=LINKED?rows.filter(x=>x.short>0&&x.it&&!openRfq(x.it.id)):[];
+  const state=x=>{if(!x.short)return'<span class="pill p-ok">متاح</span>';if(!LINKED||!x.it)return'<span class="pill p-short">ناقص</span>';
+    const r=openRfq(x.it.id);return r?`<span class="pill p-draft" title="فيه طلب عرض سعر مفتوح في إمداد">${esc(r.no||r.id)}</span>`:`<button class="btn" data-act="rfq" data-rid="${esc(x.it.id)}">اطلب عرض سعر</button>`};
   $('#c-out').innerHTML=`<div class="stat"><div><b>${rows.length}</b><span>صنف مطلوب</span></div><div><b>${money(tot)}</b><span>تكلفة الخامات (ج.م)</span></div><div><b>${money(qty?tot/qty:0)}</b><span>تكلفة ${esc(it.unit)}</span></div><div><b style="color:${shorts?'var(--bad)':'var(--ok)'}">${shorts}</b><span>أصناف ناقصة</span></div></div>
   ${r.mids.length?`<div class="note">فيه ${r.mids.length} صنف نصف مصنّع اتفكّك لمكوناته: ${r.mids.map(m=>esc(m.it.name)+' ('+fmt(m.need)+' '+esc(m.it.unit)+')').join('، ')}.</div>`:''}
   ${!LINKED?'<div class="note warn">الأرصدة هنا من ملف الأصناف المستورد. لما البرنامج يتربط بإمداد هيقرا الرصيد الحقيقي من المخازن.</div>':''}
-  <section class="panel"><div class="panel-h"><h2>الاحتياج لـ ${fmt(qty)} ${esc(it.unit)} ${esc(it.name)}</h2><span class="grow"></span><button class="btn" data-act="exportCalc">نزّل Excel</button></div>
+  <section class="panel"><div class="panel-h"><h2>الاحتياج لـ ${fmt(qty)} ${esc(it.unit)} ${esc(it.name)}</h2><span class="grow"></span>${toAsk.length>1?`<button class="btn pri" data-act="rfqAll">اطلب عروض أسعار للنواقص (${toAsk.length})</button>`:''}<button class="btn" data-act="exportCalc">نزّل Excel</button></div>
+  ${shorts&&!LINKED?'<div class="note" style="margin:10px 14px">طلب عروض الأسعار من النواقص بيشتغل في نسخة إمداد، وبيفتح الطلب هناك على طول.</div>':''}
   <div class="scroll"><table><thead><tr><th>الصنف</th><th>الوحدة</th><th class="num">المطلوب</th><th class="num">الرصيد</th><th class="num">النقص</th><th class="num">التكلفة</th><th></th></tr></thead><tbody>
-  ${rows.map(x=>`<tr><td>${esc(x.it?.name||'صنف مش موجود')}<span class="sub code">${esc(x.it?.sku||'')}</span></td><td>${esc(x.it?.unit||'')}</td><td class="num">${fmt(x.need,3)}</td><td class="num">${fmt(x.oh,3)}</td><td class="num">${x.short?fmt(x.short,3):'—'}</td><td class="num">${money(x.cost)}</td><td>${x.short?'<span class="pill p-short">ناقص</span>':'<span class="pill p-ok">متاح</span>'}</td></tr>`).join('')}
+  ${rows.map(x=>`<tr><td>${esc(x.it?.name||'صنف مش موجود')}<span class="sub code">${esc(x.it?.sku||'')}</span></td><td>${esc(x.it?.unit||'')}</td><td class="num">${fmt(x.need,3)}</td><td class="num">${fmt(x.oh,3)}</td><td class="num">${x.short?fmt(x.short,3):'—'}</td><td class="num">${money(x.cost)}</td><td>${state(x)}</td></tr>`).join('')}
   </tbody><tfoot><tr><td colspan="5">الإجمالي</td><td class="num">${money(tot)}</td><td></td></tr></tfoot></table></div></section>`;
 }
 
@@ -430,6 +451,16 @@ async function importXl(file){
   for(let k=0;k<writes.length;k+=25){await Promise.all(writes.slice(k,k+25).map(([id,b])=>put('items',id,b).catch(()=>{})));const el=$('#imp');if(el)el.textContent=`بنستورد… ${Math.min(k+25,writes.length)} من ${writes.length}`}
   toast(`اتضاف ${add} واتحدّث ${upd}${skip?`، واتساب ${skip} صف من غير اسم`:''}.`);render();
 }
+/* shortage → quote request in Emdad (linked only). Same shape Emdad's own rfqForm writes, so it shows up in طلبات عروض الأسعار. */
+const openRfq=itemId=>S.rfqs.find(r=>r.itemId===itemId&&r.status==='open');
+const ymd=o=>{const d=new Date();d.setDate(d.getDate()+o);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`};
+async function createRfq(x){
+  const {it:prod,qty}=lastCalc,id=genNo('RFQ');
+  await put('rfqs',id,{no:id,itemId:x.it.id,qty:Math.ceil(x.short),neededBy:ymd(21),replyBy:ymd(5),
+    notes:[x.it.specs,`نقص لتصنيع ${fmt(qty)} ${prod.unit} ${prod.name} (من قوائم المواد)`].filter(Boolean).join('\n'),
+    status:'open',quotes:[],invited:{},date:ymd(0),ts:now()},'إنشاء من قوائم المواد');
+  return id;
+}
 async function exportCalc(){
   if(!lastCalc||!window.XLSX)return;
   const {it,qty,rows}=lastCalc;
@@ -470,6 +501,8 @@ document.addEventListener('click',async e=>{
   else if(a==='delBom'){if(arm(b,'دوس تاني للمسح')){await del('boms',view.id);draft=null;view.id=null;toast('اتمسحت.');render()}}
   else if(a==='toCalc'){const d=byId('boms',view.id);view={tab:'calc',id:d.itemId};render()}
   else if(a==='exportCalc')exportCalc();
+  else if(a==='rfq'){const x=lastCalc?.rows.find(r=>r.it?.id===b.dataset.rid);if(!x||openRfq(x.it.id))return;b.disabled=true;try{const id=await createRfq(x);toast(`اتفتح ${id} في إمداد لـ ${fmt(Math.ceil(x.short))} ${x.it.unit} ${x.it.name}.`)}catch(e){b.disabled=false}}
+  else if(a==='rfqAll'){const xs=lastCalc.rows.filter(x=>x.short>0&&x.it&&!openRfq(x.it.id));if(!arm(b,`متأكد؟ هيتفتح ${xs.length} طلب`))return;b.disabled=true;let ok=0;for(const x of xs){try{await createRfq(x);ok++}catch(e){break}}if(ok)toast(`اتفتح ${ok} طلب عرض سعر في إمداد.`)}
   else if(a==='newItem'){view={tab:'items',id:'new'};render()}
   else if(a==='saveItem')await saveItem();
   else if(a==='delItem'){const used=S.boms.some(x=>x.itemId===view.id||(x.lines||[]).some(l=>l.itemId===view.id));if(used){toast('الصنف ده داخل في قائمة مواد. شيله منها الأول.','bad');return}if(arm(b,'دوس تاني للمسح')){await del('items',view.id);toast('اتمسح.');setTab('items')}}
@@ -480,7 +513,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Enter'){const r=e.target.clo
 document.addEventListener('change',e=>{
   if(e.target.id==='xlFile'&&e.target.files[0]){importXl(e.target.files[0]);e.target.value=''}
   if(e.target.id==='c-item'){view.id=e.target.value;runCalc()}
-  if(e.target.matches('.li-item,#f-item,#f-yield,.li-qty,.li-scrap')){syncDraftFromInputs();const f=document.activeElement?.id;render();if(f)document.getElementById(f)?.focus()}
+  if(e.target.matches('.li-item,#f-item,#f-yield,.li-qty,.li-scrap,.li-unit,.li-conv')){syncDraftFromInputs();const f=document.activeElement?.id;render();if(f)document.getElementById(f)?.focus()}
 });
 let qT;document.addEventListener('input',e=>{
   if(e.target.id==='q'){clearTimeout(qT);qT=setTimeout(()=>{q=e.target.value;const pos=e.target.selectionStart;render();const el=$('#q');if(el){el.focus();el.setSelectionRange(pos,pos)}},200)}
@@ -494,6 +527,7 @@ let rT;const schedule=()=>{clearTimeout(rT);rT=setTimeout(()=>{const ae=document
   const c=window.claude;
   if(c&&typeof c.use==='function'){try{db=await c.use('db')}catch(e){db=null}}
   if(db)mode='db';else{db=localDb();mode='local'}
+  if(LINKED){try{const u=await c.use('user');meId=(u&&await u.id())||''}catch(e){}} // Emdad shows who created the RFQ
   const slow=setTimeout(()=>{if(loaded.size<COLS.length)$('#app').innerHTML='<div class="empty"><b>البيانات لسه ما وصلتش</b>الاتصال بطيء. استنى شوية.</div>'},10000);
   COLS.forEach(col=>db.collection(col).onSnapshot(snap=>{S[col]=snap.docs.map(d=>Object.assign({id:d.id},d.data()));loaded.add(col);if(loaded.size===COLS.length)clearTimeout(slow);schedule()},
     err=>{loaded.add(col);schedule();toast('الاتصال بالبيانات وقف. اعمل ريفريش.','bad')}));
