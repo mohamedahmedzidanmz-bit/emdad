@@ -11,6 +11,7 @@
 <meta name="apple-mobile-web-app-title" content="إمداد">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <script>if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));</script>
+<script>window.EMDAD_BOM_URL='bom.html';</script>
 <script src="supabase.js"></script>
 <script src="config.js"></script>
 <script src="backend.js"></script>
@@ -486,7 +487,7 @@ const IC={
   carton:'M3 7l9-4 9 4-9 4zm-1 2 9 4v9l-9-4zm11 4 9-4v9l-9 4z',
   finished:'M12 2 4 5v6c0 5 3.4 9.6 8 11 4.6-1.4 8-6 8-11V5zm-1.1 14.6-3.6-3.6 1.4-1.4 2.2 2.2 4.8-4.8 1.4 1.4z'
 };
-const ITEM_ICON={raw:'rawmat',component:'gear',packaging:'carton',finished:'finished',supplies:'gear'};
+const ITEM_ICON={raw:'rawmat',component:'gear',packaging:'carton',semi:'rawmat',finished:'finished',supplies:'gear'};
 const itemTile=(i,sm)=>`<span class="o-tile${sm?' sm':''}" style="background:${hue(i.type)}">${svg(IC[ITEM_ICON[i.type]]||IC.inventory)}</span>`;
 const svg=p=>`<svg viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="${p}"/></svg>`;
 const PALETTE=['#B5473A','#A6611A','#2C8397','#475577','#814968','#C2185B','#1E8A5A','#7B57A6','#3B6FB6','#8D5A2B'];
@@ -555,7 +556,7 @@ const code=t=>`<span class="code">${esc(t)}</span>`;
 
 const SUP_ST={approved:['معتمد','ok'],trial:['تحت التجربة','warn'],blocked:['موقوف','bad']};
 const SUP_CAT={raw:'خامات',component:'مكونات',packaging:'تغليف',service:'نقل وخدمات',other:'أخرى'};
-const ITEM_T={raw:'خامات',component:'مكونات',packaging:'تغليف',finished:'منتج تام',supplies:'مستلزمات وصيانة'};
+const ITEM_T={raw:'خامات',component:'مكونات',packaging:'تغليف',semi:'نصف مصنّع',finished:'منتج تام',supplies:'مستلزمات وصيانة'};
 const PO_ST={draft:['مسودة','mute'],pending:['بانتظار الاعتماد','warn'],approved:['معتمد، جاهز للإرسال','info'],rejected:['مرفوض من الإدارة','bad'],sent:['مُرسل للمورد','info'],partial:['استلام جزئي','warn'],received:['مستلم بالكامل','ok'],cancelled:['ملغي','bad']};
 const PO_OPEN=['draft','pending','approved','rejected','sent','partial'];
 const approvalLimit=()=>{const v=cfg().approvalLimit;return v===undefined||v===''?50000:+v||0};
@@ -684,7 +685,7 @@ const appOf=v=>APPS.find(a=>a.v.includes(v))||APPS[0];
 function homeHtml(ready){
   if(ready&&mode==='live'&&!myRole())return gateHtml();
   const apps=APPS.filter(a=>!ready||a.v.some(canSee));
-  return`<div class="o-home"><div class="o-hello"><b>${esc(cfg().company||'إمداد')}</b><span>منظومة سلسلة الإمداد · ${today()}</span></div><div class="o-grid">${apps.map(a=>{const vs=a.v.filter(x=>!ready||canSee(x));const n=ready?sum(vs,x=>{const[c,hot]=navCount(x);return hot?c:0}):0;return`<button class="o-app" data-a="nav" data-v="${vs[0]||a.v[0]}"><i style="background:${a.c}">${svg(IC[a.i])}</i><span>${a.t}</span>${n?`<em aria-label="${n} محتاج انتباه">${n}</em>`:''}</button>`}).join('')}</div></div>`;
+  return`<div class="o-home"><div class="o-hello"><b>${esc(cfg().company||'إمداد')}</b><span>منظومة سلسلة الإمداد · ${today()}</span></div><div class="o-grid">${apps.map(a=>{const vs=a.v.filter(x=>!ready||canSee(x));const n=ready?sum(vs,x=>{const[c,hot]=navCount(x);return hot?c:0}):0;return`<button class="o-app" data-a="nav" data-v="${vs[0]||a.v[0]}"><i style="background:${a.c}">${svg(IC[a.i])}</i><span>${a.t}</span>${n?`<em aria-label="${n} محتاج انتباه">${n}</em>`:''}</button>`}).join('')}${window.EMDAD_BOM_URL?`<a class="o-app" href="${esc(window.EMDAD_BOM_URL)}"><i style="background:#3F7D74">${svg(IC.rawmat)}</i><span>قوائم المواد</span></a>`:''}</div></div>`; // BOM app (work/04-bom) sits next to the site build only
 }
 function render(){
   const ready0=mode==='local'||loaded.size===COLS.length;
@@ -855,7 +856,7 @@ async function userSearch(q){
 
 /* ---------- master-data codes (scheme: SUP-R-001 · RM-01-0007 · WH01 · PRD-10) ---------- */
 const SUP_PFX={raw:'R',component:'C',packaging:'P',service:'S',other:'O'};
-const ITEM_PFX={raw:'RM',component:'CP',packaging:'PK',finished:'FG',supplies:'SP'};
+const ITEM_PFX={raw:'RM',component:'CP',packaging:'PK',semi:'SF',finished:'FG',supplies:'SP'};
 const WH_T={raw:'خامات',component:'مكونات',packaging:'تغليف',finished:'منتج تام',quarantine:'حجر (منتظر فحص)',reject:'مرفوضات وهالك',other:'أخرى'};
 const DEPT_K={prod:['إنتاجي','PRD'],service:['خدمي','SRV'],branch:['فروع','BRN'],owner:['ملاك','OWN']};
 // next free number after the highest existing code with this prefix (step 10 for departments)

@@ -1,0 +1,504 @@
+<!doctype html>
+<html lang="ar" dir="rtl"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#714B67">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+<script>window.BOM_LINKED=true;</script>
+<script src="supabase.js"></script>
+<script src="config.js"></script>
+<script src="backend.js"></script>
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}</style>
+</head><body><title>قوائم المواد</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+/* Layout: Emdad-family app shell. Purple top bar, tabs, one working panel under it. Same palette as إمداد so the two feel like one system. */
+:root{
+  --nav:#714B67;--nav-ink:#fff;--nav-hover:rgba(255,255,255,.14);
+  --bg:#F4F2F4;--surface:#fff;--ink:#1F2329;--muted:#646B74;--line:#DEDAE0;--soft:#F7F5F7;
+  --accent:#714B67;--accent-ink:#fff;--accent-soft:#F1E8EF;--link:#017E84;
+  --ok:#1B7A48;--ok-soft:#E3F2E9;--warn:#9A5B00;--warn-soft:#FFF1D6;--bad:#B42318;--bad-soft:#FBE6E3;
+  --f-body:"IBM Plex Sans Arabic",Tahoma,"Segoe UI",sans-serif;
+  --r:6px;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --nav:#4E3347;--bg:#17151A;--surface:#211E24;--ink:#ECE8EE;--muted:#A49DA8;--line:#38323C;--soft:#29252D;
+  --accent:#C08AB3;--accent-ink:#1A1219;--accent-soft:#3A2B36;--link:#4FC3C8;
+  --ok:#5FCB8E;--ok-soft:#1D3327;--warn:#F0B44C;--warn-soft:#3A2D14;--bad:#F2877B;--bad-soft:#3D1F1C;color-scheme:dark}}
+:root[data-theme="dark"]{
+  --nav:#4E3347;--bg:#17151A;--surface:#211E24;--ink:#ECE8EE;--muted:#A49DA8;--line:#38323C;--soft:#29252D;
+  --accent:#C08AB3;--accent-ink:#1A1219;--accent-soft:#3A2B36;--link:#4FC3C8;
+  --ok:#5FCB8E;--ok-soft:#1D3327;--warn:#F0B44C;--warn-soft:#3A2D14;--bad:#F2877B;--bad-soft:#3D1F1C;color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:14px;line-height:1.55;direction:rtl}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--nav)}
+button,input,select,textarea{font:inherit;color:inherit}
+.num,td.num,th.num{text-align:left;font-variant-numeric:tabular-nums;direction:ltr}
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--nav);color:var(--nav-ink);padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.top-in{max-width:1180px;margin:0 auto;display:flex;align-items:center;gap:6px;min-height:48px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:16px;margin-inline-end:14px}
+.brand i{width:28px;height:28px;border-radius:6px;background:rgba(255,255,255,.16);display:grid;place-items:center}
+.brand svg{width:17px;height:17px;fill:#fff}
+.tabs{display:flex;gap:2px;flex-wrap:wrap}
+.tab{all:unset;cursor:pointer;padding:12px 12px;font-weight:500;border-bottom:3px solid transparent}
+.tab:hover{background:var(--nav-hover)}
+.tab[aria-current="page"]{border-bottom-color:#fff;font-weight:700}
+.tab:focus-visible{outline:2px solid #fff;outline-offset:-2px}
+.mode{margin-inline-start:auto;font-size:12px;padding:3px 9px;border-radius:99px;background:rgba(255,255,255,.16);white-space:nowrap}
+main{max-width:1180px;margin:0 auto;padding-block:18px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:14px}
+.bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.bar h1{font-size:20px;margin:0;text-wrap:balance}
+.crumb{color:var(--muted);font-size:13px}
+.crumb button{all:unset;cursor:pointer;color:var(--link)}
+.grow{flex:1}
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:4px;padding:7px 13px;cursor:pointer;font-weight:500;white-space:nowrap}
+.btn:hover{background:var(--soft)}
+.btn.pri{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.pri:hover{filter:brightness(1.08)}
+.btn.bad{color:var(--bad)}
+.btn.armed{background:var(--bad);color:#fff;border-color:var(--bad)}
+.btn:focus-visible,.lnk:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.lnk{all:unset;cursor:pointer;color:var(--link)}
+.search{border:1px solid var(--line);background:var(--surface);border-radius:4px;padding:7px 10px;min-width:0;width:260px;max-width:100%}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);min-width:0}
+.panel-h{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.panel-h h2{font-size:15px;margin:0}
+.scroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse}
+th{font-size:12px;color:var(--muted);font-weight:600;text-align:right;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--soft);white-space:nowrap}
+td{padding:8px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
+tr.click{cursor:pointer}
+tr.click:hover td{background:var(--soft)}
+tfoot td{font-weight:700;background:var(--soft);border-bottom:0}
+.sub{display:block;font-size:12px;color:var(--muted)}
+.code{font-family:ui-monospace,Consolas,monospace;font-size:12.5px;direction:ltr;unicode-bidi:isolate}
+.pill{display:inline-block;font-size:12px;font-weight:600;padding:2px 9px;border-radius:99px;white-space:nowrap}
+.p-draft{background:var(--soft);color:var(--muted);border:1px solid var(--line)}
+.p-approved{background:var(--ok-soft);color:var(--ok)}
+.p-archived{background:var(--warn-soft);color:var(--warn)}
+.p-short{background:var(--bad-soft);color:var(--bad)}
+.p-ok{background:var(--ok-soft);color:var(--ok)}
+.p-sample{background:var(--accent-soft);color:var(--accent);font-size:11px}
+.stat{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:1px;background:var(--line);border-radius:var(--r);overflow:hidden;border:1px solid var(--line)}
+.stat div{background:var(--surface);padding:12px 14px}
+.stat b{display:block;font-size:20px;font-variant-numeric:tabular-nums}
+.stat span{font-size:12px;color:var(--muted)}
+.form{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;padding:14px}
+.form label,.fl{display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:600;min-width:0}
+.form .full{grid-column:1/-1}
+input.in,select.in,textarea.in{border:1px solid var(--line);border-radius:4px;padding:7px 9px;background:var(--surface);font-weight:400;width:100%;min-width:0}
+input.in:focus,select.in:focus,textarea.in:focus{outline:2px solid var(--accent);outline-offset:-1px;border-color:transparent}
+input.in.bad{border-color:var(--bad);background:var(--bad-soft)}
+.hint{font-size:12px;color:var(--muted);font-weight:400}
+.lines td{padding:6px 8px}
+.lines input.in{padding:6px 8px}
+.lines .w-item{min-width:240px}
+.lines .w-n{width:110px}
+.x{all:unset;cursor:pointer;width:28px;height:28px;display:grid;place-items:center;border-radius:4px;color:var(--muted)}
+.x:hover{background:var(--bad-soft);color:var(--bad)}
+.empty{padding:34px 16px;text-align:center;color:var(--muted)}
+.empty b{display:block;color:var(--ink);font-size:15px;margin-bottom:4px}
+.note{padding:10px 14px;border-radius:var(--r);background:var(--accent-soft);font-size:13px}
+.note.warn{background:var(--warn-soft);color:var(--warn)}
+.tree{color:var(--muted);font-size:12px}
+.lvl1 td:first-child{padding-inline-start:28px}
+.lvl2 td:first-child{padding-inline-start:44px}
+.toast{position:fixed;bottom:calc(18px + env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:6px;z-index:50;max-width:calc(100% - 32px);font-size:13px}
+.toast.bad{background:var(--bad);color:#fff}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{all:unset;cursor:pointer;font-size:12.5px;padding:4px 10px;border-radius:99px;border:1px solid var(--line);background:var(--surface)}
+.chip[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:14px;align-items:start}
+@media (max-width:860px){.cols{grid-template-columns:minmax(0,1fr)}.search{width:100%}}
+.kv{display:flex;flex-direction:column;gap:0}
+.kv div{display:flex;justify-content:space-between;gap:10px;padding:9px 14px;border-bottom:1px solid var(--line)}
+.kv div:last-child{border-bottom:0}
+.kv b{font-variant-numeric:tabular-nums}
+.big{font-size:22px}
+@media (prefers-reduced-motion:no-preference){.btn,.chip,tr.click td{transition:background .12s}}
+</style>
+
+<header class="top">
+  <div class="top-in">
+    <div class="brand"><i><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 3h7v7H4zm9 0h7v7h-7zM4 14h7v7H4zm9 3h3v-3h2v3h3v2h-3v3h-2v-3h-3z"/></svg></i>قوائم المواد</div>
+    <nav class="tabs" aria-label="الأقسام">
+      <button class="tab" data-tab="boms" id="t-boms">قوائم المواد</button>
+      <button class="tab" data-tab="calc" id="t-calc">حاسبة الاحتياج</button>
+      <button class="tab" data-tab="items" id="t-items">الأصناف</button>
+    </nav>
+    <a class="tab" id="toEmdad" href="index.html" hidden>رجوع لإمداد</a>
+    <span class="mode" id="mode">بيحمّل…</span>
+  </div>
+</header>
+<main id="app" aria-live="polite"><div class="empty"><b>بنحمّل البيانات…</b>قوائم المواد والأصناف هتظهر هنا.</div></main>
+<datalist id="dl-units"><option value="كجم"><option value="جم"><option value="لتر"><option value="مل"><option value="قطعة"><option value="علبة"><option value="كرتونة"><option value="لفة"><option value="متر"></datalist>
+<datalist id="dl-items"></datalist>
+<datalist id="dl-products"></datalist>
+
+<script>
+/* BOM app. Data contract is identical to إمداد: collections in one db, read/written only through
+   claude.use('db').collection(col).doc(id).set/delete and collection(col).onSnapshot(cb).
+   - items: {sku,name,type,unit,cost,onHand,...} with id "IT-<sku>", the same ids Emdad uses.
+   - boms:  {code,itemId,version,status,yieldQty,lines:[{itemId,qty,scrap}],notes,hist,...}
+   Inside Claude this is the artifact db. Next to Emdad's backend.js it is Emdad's Supabase "docs" table. */
+const ITEM_T={raw:'خامات',component:'مكونات',packaging:'تغليف',semi:'نصف مصنّع',finished:'منتج تام',supplies:'مستلزمات وصيانة'};
+const ST={draft:'مسودة',approved:'معتمدة',archived:'مؤرشفة'};
+const COLS=['items','boms'];
+const LINKED=window.BOM_LINKED===true; // set by build.ps1 next to Emdad: items and stock belong to Emdad, read-only here
+document.getElementById('toEmdad').hidden=!LINKED;
+const S={items:[],boms:[]};
+let db=null,mode='local',loaded=new Set(),view={tab:'boms',id:null},q='',fType='',fSt='';
+
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const n=v=>{const x=parseFloat(String(v??'').replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/٫/g,'.').replace(/,/g,''));return isFinite(x)?x:0};
+const fmt=(v,d=2)=>Number(v||0).toLocaleString('en-US',{maximumFractionDigits:d});
+const money=v=>fmt(v,2);
+const safeId=s=>String(s).trim().replace(/[^A-Za-z0-9_\-.~:@+]/g,'_').slice(0,120)||'x';
+const byId=(col,id)=>S[col].find(x=>x.id===id);
+const itemLabel=i=>i?`${i.sku||i.id} · ${i.name}`:'';
+const now=()=>Date.now();
+const genNo=p=>{const d=new Date();return `${p}-${String(d.getFullYear()).slice(2)}${String(d.getMonth()+1).padStart(2,'0')}-${Math.random().toString(36).slice(2,6).toUpperCase()}`};
+
+function toast(msg,tone){const t=document.createElement('div');t.className='toast '+(tone||'');t.setAttribute('role','status');t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),3200)}
+
+/* ---------- storage ---------- */
+function localDb(){ // same surface as the real db, kept in this browser only
+  const key='bom-local-v1';let store={};try{store=JSON.parse(localStorage.getItem(key)||'{}')}catch(e){}
+  const subs={};const save=()=>{try{localStorage.setItem(key,JSON.stringify(store))}catch(e){}};
+  const emit=col=>(subs[col]||[]).forEach(cb=>cb({docs:Object.entries(store[col]||{}).map(([id,d])=>({id,data:()=>d}))}));
+  return{collection(col){return{
+    doc(id){return{async set(d){(store[col]=store[col]||{})[id]=JSON.parse(JSON.stringify(d));save();emit(col)},async delete(){if(store[col])delete store[col][id];save();emit(col)}}},
+    onSnapshot(cb){(subs[col]=subs[col]||[]).push(cb);setTimeout(()=>emit(col),0);return()=>{}}
+  }}};
+}
+async function put(col,id,data,act){
+  const prev=byId(col,id);const t=now();
+  const body=Object.assign({},data,{createdAt:prev?.createdAt||t,updatedAt:t});
+  if(act){body.hist=[...(prev?.hist||[]),{a:act,t,u:''}].slice(-30)}else if(prev?.hist)body.hist=prev.hist;
+  delete body.id;
+  try{await db.collection(col).doc(id).set(body)}catch(e){toast(e?.code==='invalid_argument'?'مش مسموحلك تعدّل هنا. اطلب صلاحية Contributor.':e?.code==='quota_exceeded'?'المساحة اتملت. امسح سجلات قديمة.':'الحفظ ما تمّش. جرّب تاني.','bad');throw e}
+}
+async function del(col,id){try{await db.collection(col).doc(id).delete()}catch(e){toast('المسح ما تمّش. جرّب تاني.','bad');throw e}}
+
+/* ---------- BOM math ---------- */
+const activeBom=itemId=>{const l=S.boms.filter(b=>b.itemId===itemId&&b.status==='approved');return l.sort((a,b)=>b.version-a.version)[0]||null};
+const bomsOf=itemId=>S.boms.filter(b=>b.itemId===itemId).sort((a,b)=>b.version-a.version);
+const lineNeed=l=>n(l.qty)*(1+n(l.scrap)/100);
+function bomCost(b,seen=new Set()){ // cost of one batch; semi-finished lines use their own approved BOM's unit cost when they have one
+  let total=0;const rows=(b.lines||[]).map(l=>{const it=byId('items',l.itemId);let uc=n(it?.cost);
+    const sub=it&&activeBom(it.id);if(sub&&!seen.has(sub.id)){const s2=new Set(seen);s2.add(b.id);uc=bomCost(sub,s2).unit}
+    const c=lineNeed(l)*uc;total+=c;return{l,it,uc,c}});
+  const y=n(b.yieldQty)||1;return{rows,total,unit:total/y};
+}
+function explode(itemId,qty){ // multi-level: semi-finished with an approved BOM explodes further
+  const leaves=new Map(),mids=[],missing=[];
+  (function go(id,q,depth,path){
+    const b=activeBom(id);
+    if(!b){missing.push(id);return}
+    const f=q/(n(b.yieldQty)||1);
+    for(const l of b.lines||[]){
+      const need=lineNeed(l)*f,it=byId('items',l.itemId);
+      if(it&&activeBom(it.id)&&!path.includes(it.id)&&depth<8){mids.push({it,need,depth});go(it.id,need,depth+1,[...path,it.id])}
+      else{const cur=leaves.get(l.itemId)||{it,need:0};cur.need+=need;leaves.set(l.itemId,cur)}
+    }
+  })(itemId,qty,0,[itemId]);
+  return{leaves:[...leaves.values()],mids,missing};
+}
+
+/* ---------- render ---------- */
+function setTab(t,id){view={tab:t,id:id||null};q='';render();window.scrollTo(0,0)}
+function render(){
+  document.querySelectorAll('.tab').forEach(b=>b.toggleAttribute('aria-current',false));
+  const cur=$('#t-'+view.tab);if(cur)cur.setAttribute('aria-current','page');
+  $('#mode').textContent=LINKED?'مربوط بإمداد':mode==='db'?'متزامن':'على الجهاز ده بس';
+  $('#mode').title=mode==='db'?'البيانات محفوظة ومشتركة مع اللي معاهم صلاحية':'مفيش قاعدة بيانات، البيانات محفوظة في المتصفح ده بس';
+  if(loaded.size<COLS.length){return}
+  fillLists();
+  const app=$('#app');
+  app.innerHTML=view.tab==='boms'?(view.id?bomForm(view.id):bomList()):view.tab==='calc'?calcView():(view.id?itemForm(view.id):itemList());
+  if(view.tab==='calc')runCalc();
+}
+function fillLists(){
+  const its=[...S.items].sort((a,b)=>String(a.name).localeCompare(String(b.name),'ar'));
+  $('#dl-items').innerHTML=its.map(i=>`<option value="${esc(itemLabel(i))}">`).join('');
+  $('#dl-products').innerHTML=its.filter(i=>i.type==='finished'||i.type==='semi').map(i=>`<option value="${esc(itemLabel(i))}">`).join('');
+}
+const resolveItem=v=>{v=String(v||'').trim();if(!v)return null;return S.items.find(i=>itemLabel(i)===v)||S.items.find(i=>String(i.sku)===v||i.id===v)||S.items.find(i=>i.name===v)||null};
+const hasSample=()=>S.items.some(i=>i.sample===true)||S.boms.some(b=>b.sample===true);
+const sampleTag=x=>x.sample===true?' <span class="pill p-sample">مثال</span>':'';
+
+function bomList(){
+  const term=q.trim();
+  let list=S.boms.map(b=>({b,it:byId('items',b.itemId)}));
+  if(fSt)list=list.filter(x=>x.b.status===fSt);
+  if(term)list=list.filter(x=>(x.b.code+' '+(x.it?.name||'')+' '+(x.it?.sku||'')).includes(term));
+  list.sort((a,b)=>(a.it?.name||'').localeCompare(b.it?.name||'','ar')||b.b.version-a.b.version);
+  const appr=S.boms.filter(b=>b.status==='approved');
+  const prods=new Set(appr.map(b=>b.itemId)).size;
+  const avg=appr.length?appr.reduce((s,b)=>s+n(bomCost(b).unit),0)/appr.length:0;
+  const rows=list.map(({b,it})=>{const c=bomCost(b);return`<tr class="click" data-open="${esc(b.id)}" tabindex="0">
+    <td><span class="code">${esc(b.code)}</span></td>
+    <td>${esc(it?.name||'صنف مش موجود')}${sampleTag(b)}<span class="sub">${esc(ITEM_T[it?.type]||'')}</span></td>
+    <td class="num">v${b.version}</td>
+    <td class="num">${fmt(b.yieldQty)} ${esc(it?.unit||'')}</td>
+    <td class="num">${(b.lines||[]).length}</td>
+    <td class="num">${money(c.unit)}</td>
+    <td><span class="pill p-${b.status}">${ST[b.status]}</span></td></tr>`}).join('');
+  return `<div class="bar"><h1>قوائم المواد</h1><span class="grow"></span>
+    <input class="search" id="q" type="search" placeholder="دوّر بالمنتج أو الكود" value="${esc(q)}" aria-label="بحث">
+    <button class="btn pri" data-act="newBom">قائمة جديدة</button></div>
+  ${hasSample()?`<div class="note">البيانات اللي عليها علامة «مثال» تجريبية عشان تشوف البرنامج شغال إزاي. <button class="lnk" data-act="clearSample">امسح بيانات المثال</button></div>`:''}
+  <div class="stat"><div><b>${S.boms.length}</b><span>قوائم مواد</span></div><div><b>${appr.length}</b><span>معتمدة</span></div><div><b>${prods}</b><span>منتجات ليها قائمة معتمدة</span></div><div><b>${money(avg)}</b><span>متوسط تكلفة الوحدة (ج.م)</span></div></div>
+  <div class="chips" role="group" aria-label="فلتر الحالة">${[['','الكل'],['approved','معتمدة'],['draft','مسودة'],['archived','مؤرشفة']].map(([k,l])=>`<button class="chip" data-fst="${k}" aria-pressed="${fSt===k}">${l}</button>`).join('')}</div>
+  <section class="panel">${list.length?`<div class="scroll"><table><thead><tr><th>الكود</th><th>المنتج</th><th class="num">النسخة</th><th class="num">ناتج الباتش</th><th class="num">مكونات</th><th class="num">تكلفة الوحدة</th><th>الحالة</th></tr></thead><tbody>${rows}</tbody></table></div>`
+    :`<div class="empty"><b>${S.boms.length?'مفيش نتايج':'مفيش قوائم مواد لسه'}</b>${S.boms.length?'جرّب كلمة تانية أو شيل الفلتر.':(S.items.length?'دوس «قائمة جديدة» واختار المنتج ومكوناته.':'ابدأ من «الأصناف»: استورد ملف الأصناف من Excel، وبعدين اعمل أول قائمة.')}</div>`}</section>`;
+}
+
+let draft=null;
+function bomForm(id){
+  const isNew=id==='new';
+  if(!draft||draft._for!==id){
+    const b=isNew?null:byId('boms',id);
+    if(!isNew&&!b){view.id=null;return bomList()}
+    draft=b?JSON.parse(JSON.stringify(b)):{itemId:'',version:1,status:'draft',yieldQty:1,notes:'',lines:[{itemId:'',qty:'',scrap:0}]};
+    draft._for=id;
+  }
+  const d=draft,it=byId('items',d.itemId),locked=d.status!=='draft'&&!isNew;
+  const c=bomCost(Object.assign({id:'_d'},d));
+  const vers=it?bomsOf(it.id):[];
+  const lines=d.lines.map((l,k)=>{const li=byId('items',l.itemId),row=c.rows[k];return`<tr>
+    <td class="w-item">${locked?esc(itemLabel(li)||'—'):`<input class="in li-item" id="li-item-${k}" list="dl-items" data-k="${k}" value="${esc(itemLabel(li))}" placeholder="اكتب اسم أو كود الصنف" aria-label="الصنف">`}${li&&activeBom(li.id)?'<span class="sub">نصف مصنّع، ليه قائمة معتمدة</span>':''}</td>
+    <td class="num w-n">${locked?fmt(l.qty,4):`<input class="in num li-qty" id="li-qty-${k}" inputmode="decimal" data-k="${k}" value="${esc(l.qty)}" aria-label="الكمية">`}</td>
+    <td>${esc(li?.unit||'')}</td>
+    <td class="num w-n">${locked?fmt(l.scrap):`<input class="in num li-scrap" id="li-scrap-${k}" inputmode="decimal" data-k="${k}" value="${esc(l.scrap)}" aria-label="هالك ٪">`}</td>
+    <td class="num">${money(row?.uc)}</td>
+    <td class="num">${money(row?.c)}</td>
+    <td>${locked?'':`<button class="x" data-act="rmLine" data-k="${k}" aria-label="شيل السطر">✕</button>`}</td></tr>`}).join('');
+  return `<div class="crumb"><button data-act="back">قوائم المواد</button> / ${isNew?'جديدة':esc(d.code)}</div>
+  <div class="bar"><h1>${isNew?'قائمة مواد جديدة':esc(it?.name||d.code)}</h1>${isNew?'':`<span class="pill p-${d.status}">${ST[d.status]}</span>`}<span class="grow"></span>
+    ${locked?`<button class="btn" data-act="newVersion">نسخة جديدة للتعديل</button>${d.status==='approved'?'<button class="btn" data-act="toCalc">احسب احتياج</button><button class="btn" data-act="archive">أرشفة</button>':''}`
+      :`<button class="btn pri" data-act="saveBom">احفظ</button>${isNew?'':'<button class="btn" data-act="approve">اعتمد</button>'}`}
+    ${isNew?'':'<button class="btn bad" data-act="delBom">امسح</button>'}</div>
+  <div class="cols">
+    <div style="display:flex;flex-direction:column;gap:14px;min-width:0">
+      <section class="panel"><div class="form">
+        <label class="full">المنتج اللي بيتصنّع${locked||!isNew?`<span style="font-weight:400">${esc(itemLabel(it))}</span>`:`<input class="in" id="f-item" list="dl-products" value="${esc(itemLabel(it))}" placeholder="منتج تام أو نصف مصنّع"><span class="hint">مش لاقيه؟ ضيفه من «الأصناف» بنوع منتج تام أو نصف مصنّع.</span>`}</label>
+        <label>ناتج الباتش الواحد${locked?`<span style="font-weight:400">${fmt(d.yieldQty)} ${esc(it?.unit||'')}</span>`:`<input class="in num" id="f-yield" inputmode="decimal" value="${esc(d.yieldQty)}"><span class="hint">الكميات تحت محسوبة للكمية دي${it?` (${esc(it.unit)})`:''}.</span>`}</label>
+        <label>النسخة<span style="font-weight:400" class="code">v${isNew?(it?(bomsOf(it.id)[0]?.version||0)+1:1):d.version}${d.code?' · '+esc(d.code):''}</span></label>
+        <label class="full">ملاحظات التصنيع${locked?`<span style="font-weight:400">${esc(d.notes||'—')}</span>`:`<textarea class="in" id="f-notes" rows="2" placeholder="درجة الحرارة، وقت الخبز، ترتيب الخلط…">${esc(d.notes)}</textarea>`}</label>
+      </div></section>
+      <section class="panel"><div class="panel-h"><h2>المكونات</h2><span class="grow"></span>${locked?'':'<button class="btn" data-act="addLine">سطر جديد</button>'}</div>
+        <div class="scroll"><table class="lines"><thead><tr><th>الصنف</th><th class="num">الكمية</th><th>الوحدة</th><th class="num">هالك ٪</th><th class="num">سعر الوحدة</th><th class="num">التكلفة</th><th></th></tr></thead>
+        <tbody>${lines}</tbody><tfoot><tr><td colspan="5">إجمالي تكلفة الباتش</td><td class="num">${money(c.total)}</td><td></td></tr></tfoot></table></div></section>
+    </div>
+    <aside style="display:flex;flex-direction:column;gap:14px;min-width:0">
+      <section class="panel kv"><div><span>تكلفة الباتش</span><b>${money(c.total)}</b></div><div><span>ناتج الباتش</span><b>${fmt(d.yieldQty)} ${esc(it?.unit||'')}</b></div><div><span>تكلفة ${esc(it?.unit||'الوحدة')}</span><b class="big">${money(c.unit)}</b></div>${it&&n(it.cost)?`<div><span>التكلفة المسجلة للصنف</span><b>${money(it.cost)}</b></div>`:''}</section>
+      ${vers.length>1?`<section class="panel"><div class="panel-h"><h2>النسخ</h2></div><div class="kv">${vers.map(v=>`<div><button class="lnk" data-open="${esc(v.id)}">v${v.version}</button><span class="pill p-${v.status}">${ST[v.status]}</span></div>`).join('')}</div></section>`:''}
+      ${(d.hist||[]).length?`<section class="panel"><div class="panel-h"><h2>السجل</h2></div><div class="kv">${[...d.hist].reverse().slice(0,8).map(h=>`<div><span>${esc(h.a)}</span><span class="sub">${new Date(h.t).toLocaleDateString('ar-EG')}</span></div>`).join('')}</div></section>`:''}
+    </aside>
+  </div>`;
+}
+function syncDraftFromInputs(){
+  if(!draft)return;
+  const fi=$('#f-item');if(fi){const it=resolveItem(fi.value);draft.itemId=it?it.id:''}
+  const fy=$('#f-yield');if(fy)draft.yieldQty=fy.value;
+  const fn=$('#f-notes');if(fn)draft.notes=fn.value;
+  document.querySelectorAll('.li-item').forEach(el=>{const it=resolveItem(el.value);draft.lines[+el.dataset.k].itemId=it?it.id:'';draft.lines[+el.dataset.k]._txt=el.value});
+  document.querySelectorAll('.li-qty').forEach(el=>draft.lines[+el.dataset.k].qty=el.value);
+  document.querySelectorAll('.li-scrap').forEach(el=>draft.lines[+el.dataset.k].scrap=el.value);
+}
+async function saveBom(status){
+  syncDraftFromInputs();const d=draft,isNew=d._for==='new';
+  const it=byId('items',d.itemId);
+  if(!it){toast('اختار المنتج من القايمة.','bad');$('#f-item')?.classList.add('bad');return}
+  if(n(d.yieldQty)<=0){toast('ناتج الباتش لازم يكون أكبر من صفر.','bad');return}
+  const bad=d.lines.findIndex(l=>(l._txt||l.itemId||l.qty)&&(!l.itemId||n(l.qty)<=0));
+  if(bad>=0){toast(`السطر ${bad+1}: اختار صنف موجود واكتب كمية أكبر من صفر.`,'bad');return}
+  const lines=d.lines.filter(l=>l.itemId).map(l=>({itemId:l.itemId,qty:n(l.qty),scrap:n(l.scrap)}));
+  if(!lines.length){toast('ضيف مكون واحد على الأقل.','bad');return}
+  if(lines.some(l=>l.itemId===it.id)){toast('المنتج مينفعش يبقى مكوّن في نفسه.','bad');return}
+  let id=d._for,version=d.version;
+  if(isNew){version=(bomsOf(it.id)[0]?.version||0)+1;id=safeId(`BOM-${it.sku||it.id}-${version}`)}
+  const body={code:id,itemId:it.id,version,status:status||'draft',yieldQty:n(d.yieldQty),notes:d.notes||'',lines};
+  if(d.sample)body.sample=true;
+  if(status==='approved'){for(const o of S.boms.filter(b=>b.itemId===it.id&&b.status==='approved'&&b.id!==id))await put('boms',o.id,Object.assign({},o,{status:'archived'}),`اتأرشفت لما v${version} اتعتمدت`)}
+  await put('boms',id,body,isNew?'إنشاء':status==='approved'?'اعتماد':'تعديل');
+  draft=null;view.id=id;toast(status==='approved'?'القائمة اتعتمدت.':'اتحفظت.');render();
+}
+
+function calcView(){
+  const appr=S.boms.filter(b=>b.status==='approved');
+  const opts=[...new Set(appr.map(b=>b.itemId))].map(id=>byId('items',id)).filter(Boolean).sort((a,b)=>a.name.localeCompare(b.name,'ar'));
+  const sel=view.id&&opts.some(o=>o.id===view.id)?view.id:(opts[0]?.id||'');
+  return `<div class="bar"><h1>حاسبة الاحتياج</h1></div>
+  ${opts.length?`<section class="panel"><div class="form">
+    <label>المنتج<select class="in" id="c-item">${opts.map(o=>`<option value="${esc(o.id)}"${o.id===sel?' selected':''}>${esc(itemLabel(o))}</option>`).join('')}</select></label>
+    <label>الكمية المطلوب تصنيعها<input class="in num" id="c-qty" inputmode="decimal" value="${esc(calcQty)}"><span class="hint" id="c-unit"></span></label>
+  </div></section><div id="c-out"></div>`
+  :`<section class="panel"><div class="empty"><b>مفيش قوائم معتمدة</b>الحاسبة بتشتغل على القوائم المعتمدة بس. اعتمد قائمة من «قوائم المواد».</div></section>`}`;
+}
+let calcQty=100,lastCalc=null;
+function runCalc(){
+  const sel=$('#c-item');if(!sel)return;
+  const it=byId('items',sel.value),qty=n($('#c-qty').value);calcQty=$('#c-qty').value;
+  $('#c-unit').textContent=it?`بالـ${it.unit}`:'';
+  const r=explode(it.id,qty);
+  const rows=r.leaves.map(x=>{const oh=n(x.it?.onHand),short=Math.max(0,x.need-oh);return{...x,oh,short,cost:x.need*n(x.it?.cost)}}).sort((a,b)=>b.short-a.short||b.cost-a.cost);
+  lastCalc={it,qty,rows,mids:r.mids};
+  const tot=rows.reduce((s,x)=>s+x.cost,0),shorts=rows.filter(x=>x.short>0).length;
+  $('#c-out').innerHTML=`<div class="stat"><div><b>${rows.length}</b><span>صنف مطلوب</span></div><div><b>${money(tot)}</b><span>تكلفة الخامات (ج.م)</span></div><div><b>${money(qty?tot/qty:0)}</b><span>تكلفة ${esc(it.unit)}</span></div><div><b style="color:${shorts?'var(--bad)':'var(--ok)'}">${shorts}</b><span>أصناف ناقصة</span></div></div>
+  ${r.mids.length?`<div class="note">فيه ${r.mids.length} صنف نصف مصنّع اتفكّك لمكوناته: ${r.mids.map(m=>esc(m.it.name)+' ('+fmt(m.need)+' '+esc(m.it.unit)+')').join('، ')}.</div>`:''}
+  ${!LINKED?'<div class="note warn">الأرصدة هنا من ملف الأصناف المستورد. لما البرنامج يتربط بإمداد هيقرا الرصيد الحقيقي من المخازن.</div>':''}
+  <section class="panel"><div class="panel-h"><h2>الاحتياج لـ ${fmt(qty)} ${esc(it.unit)} ${esc(it.name)}</h2><span class="grow"></span><button class="btn" data-act="exportCalc">نزّل Excel</button></div>
+  <div class="scroll"><table><thead><tr><th>الصنف</th><th>الوحدة</th><th class="num">المطلوب</th><th class="num">الرصيد</th><th class="num">النقص</th><th class="num">التكلفة</th><th></th></tr></thead><tbody>
+  ${rows.map(x=>`<tr><td>${esc(x.it?.name||'صنف مش موجود')}<span class="sub code">${esc(x.it?.sku||'')}</span></td><td>${esc(x.it?.unit||'')}</td><td class="num">${fmt(x.need,3)}</td><td class="num">${fmt(x.oh,3)}</td><td class="num">${x.short?fmt(x.short,3):'—'}</td><td class="num">${money(x.cost)}</td><td>${x.short?'<span class="pill p-short">ناقص</span>':'<span class="pill p-ok">متاح</span>'}</td></tr>`).join('')}
+  </tbody><tfoot><tr><td colspan="5">الإجمالي</td><td class="num">${money(tot)}</td><td></td></tr></tfoot></table></div></section>`;
+}
+
+function itemList(){
+  const term=q.trim();
+  let list=S.items;
+  if(fType)list=list.filter(i=>i.type===fType);
+  if(term)list=list.filter(i=>(String(i.sku)+' '+i.name).includes(term));
+  list=[...list].sort((a,b)=>String(a.name).localeCompare(String(b.name),'ar'));
+  const shown=list.slice(0,300);
+  return `<div class="bar"><h1>الأصناف</h1><span class="grow"></span>
+    <input class="search" id="q" type="search" placeholder="دوّر بالاسم أو الكود" value="${esc(q)}" aria-label="بحث">
+    ${LINKED?'':'<button class="btn" data-act="importXl">استيراد من Excel</button><button class="btn pri" data-act="newItem">صنف جديد</button>'}
+    <input type="file" id="xlFile" accept=".xlsx,.xls,.csv" hidden></div>
+  <div class="chips" role="group" aria-label="فلتر النوع">${[['','الكل'],...Object.entries(ITEM_T)].map(([k,l])=>`<button class="chip" data-fty="${k}" aria-pressed="${fType===k}">${l} <span class="hint">${k?S.items.filter(i=>i.type===k).length:S.items.length}</span></button>`).join('')}</div>
+  <section class="panel">${shown.length?`<div class="scroll"><table><thead><tr><th>الكود</th><th>الصنف</th><th>النوع</th><th>الوحدة</th><th class="num">التكلفة</th><th class="num">الرصيد</th><th>قائمة مواد</th></tr></thead><tbody>
+  ${shown.map(i=>{const b=activeBom(i.id);return`<tr class="click" data-item="${esc(i.id)}" tabindex="0"><td><span class="code">${esc(i.sku||i.id)}</span></td><td>${esc(i.name)}${sampleTag(i)}</td><td>${esc(ITEM_T[i.type]||i.type||'')}</td><td>${esc(i.unit)}</td><td class="num">${money(i.cost)}</td><td class="num">${fmt(i.onHand,3)}</td><td>${b?`<span class="pill p-approved">${esc(b.code)}</span>`:''}</td></tr>`}).join('')}
+  </tbody></table></div>${list.length>shown.length?`<div class="empty">بيظهر أول ${shown.length} من ${list.length}. دوّر أو فلتر عشان توصل للباقي.</div>`:''}`
+  :`<div class="empty"><b>${S.items.length?'مفيش نتايج':'مفيش أصناف لسه'}</b>${S.items.length?'جرّب كلمة تانية.':'استورد ملف الأصناف من Excel (نفس ملف إمداد)، أو ضيف صنف بإيدك.'}</div>`}</section>
+  <p class="hint">${LINKED?'الأصناف والأرصدة جاية من إمداد، والتعديل عليها من هناك.':'ملف Excel: أول شيت، والعناوين اللي بنقراها: الكود، اسم الصنف، النوع، الوحدة، التكلفة، الرصيد. الترتيب مش مهم، والصنف اللي كوده موجود بيتحدّث بدل ما يتكرر.'}</p>`;
+}
+function itemForm(id){
+  const isNew=id==='new'&&!LINKED,i=isNew?{type:'raw',unit:'كجم',cost:0,onHand:0}:byId('items',id);
+  if(!i){view.id=null;return itemList()}
+  const used=isNew?[]:S.boms.filter(b=>(b.lines||[]).some(l=>l.itemId===id)||b.itemId===id);
+  return `<div class="crumb"><button data-act="back">الأصناف</button> / ${isNew?'جديد':esc(i.name)}</div>
+  <div class="bar"><h1>${isNew?'صنف جديد':esc(i.name)}</h1><span class="grow"></span>${LINKED?'<span class="hint">للعرض بس. التعديل من إمداد.</span>':`<button class="btn pri" data-act="saveItem">احفظ</button>${isNew?'':'<button class="btn bad" data-act="delItem">امسح</button>'}`}</div>
+  <section class="panel"><fieldset class="form" style="border:0;margin:0" ${LINKED?'disabled':''}>
+    <label>الكود<input class="in" id="i-sku" value="${esc(i.sku||'')}" ${isNew?'':'readonly'} placeholder="نفس كود إمداد"><span class="hint">${isNew?'سيبه فاضي ويتعمل كود تلقائي.':'الكود ثابت عشان الربط مع إمداد.'}</span></label>
+    <label class="full">اسم الصنف<input class="in" id="i-name" value="${esc(i.name||'')}" required></label>
+    <label>النوع<select class="in" id="i-type">${Object.entries(ITEM_T).map(([k,l])=>`<option value="${k}"${i.type===k?' selected':''}>${l}</option>`).join('')}</select></label>
+    <label>الوحدة<input class="in" id="i-unit" list="dl-units" value="${esc(i.unit||'')}"></label>
+    <label>التكلفة (ج.م للوحدة)<input class="in num" id="i-cost" inputmode="decimal" value="${esc(i.cost)}"></label>
+    <label>الرصيد<input class="in num" id="i-oh" inputmode="decimal" value="${esc(i.onHand)}"><span class="hint">${LINKED?'الرصيد الحالي في إمداد.':'للحاسبة بس. بعد الربط هيتقري من إمداد.'}</span></label>
+  </fieldset></section>
+  ${used.length?`<section class="panel"><div class="panel-h"><h2>بيستخدم في</h2></div><div class="kv">${used.map(b=>`<div><button class="lnk" data-open="${esc(b.id)}">${esc(b.code)}</button><span class="pill p-${b.status}">${ST[b.status]}</span></div>`).join('')}</div></section>`:''}`;
+}
+async function saveItem(){
+  if(LINKED)return;
+  const id=view.id,isNew=id==='new',v=s=>$(s).value.trim();
+  const name=v('#i-name');if(!name){toast('اكتب اسم الصنف.','bad');$('#i-name').classList.add('bad');return}
+  let sku=isNew?v('#i-sku'):byId('items',id).sku;
+  let nid=id;
+  if(isNew){if(!sku){nid=genNo('IT');sku=nid}else{nid=safeId('IT-'+sku)}if(byId('items',nid)){toast('الكود ده موجود قبل كده.','bad');return}}
+  const prev=isNew?{}:byId('items',id);
+  const body=Object.assign({},prev,{sku,name,type:$('#i-type').value,unit:v('#i-unit')||'قطعة',cost:n(v('#i-cost')),onHand:n(v('#i-oh'))});
+  await put('items',nid,body,isNew?'إنشاء من قوائم المواد':'تعديل من قوائم المواد');
+  toast('اتحفظ.');setTab('items');
+}
+
+/* ---------- Excel ---------- */
+const TYPE_IN={'خامات':'raw','خامة':'raw','raw':'raw','مكونات':'component','مكون':'component','component':'component','تغليف':'packaging','تعبئة':'packaging','packaging':'packaging','نصف مصنع':'semi','نصف مصنّع':'semi','semi':'semi','منتج تام':'finished','تام':'finished','finished':'finished','مستلزمات':'supplies','مستلزمات وصيانة':'supplies','supplies':'supplies'};
+async function importXl(file){
+  if(!window.XLSX){toast('مكتبة Excel ما اتحملتش. اعمل ريفريش.','bad');return}
+  const wb=XLSX.read(await file.arrayBuffer());const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:''});
+  if(!rows.length){toast('الشيت الأول فاضي.','bad');return}
+  const keys=Object.keys(rows[0]);const find=re=>keys.find(k=>re.test(String(k).trim()));
+  const K={sku:find(/^(ال)?كود|code|sku/i),name:find(/اسم|^(ال)?صنف$|name/i),type:find(/نوع|type/i),unit:find(/وحد|unit/i),cost:find(/تكلف|سعر|cost|price/i),oh:find(/رصيد|كمي|on ?hand|qty/i)};
+  if(!K.name){toast('مش لاقي عمود «اسم الصنف» في أول صف.','bad');return}
+  let add=0,upd=0,skip=0;const writes=[];
+  for(const r of rows){
+    const name=String(r[K.name]||'').trim();if(!name){skip++;continue}
+    const sku=K.sku?String(r[K.sku]).trim():'';
+    const id=sku?safeId('IT-'+sku):(S.items.find(i=>i.name===name)?.id||genNo('IT'));
+    const prev=byId('items',id);
+    const t=TYPE_IN[String(K.type?r[K.type]:'').trim()]||prev?.type||'raw';
+    const body=Object.assign({},prev||{},{sku:sku||prev?.sku||id,name,type:t,unit:String(K.unit?r[K.unit]:'').trim()||prev?.unit||'قطعة',cost:K.cost?n(r[K.cost]):n(prev?.cost),onHand:K.oh?n(r[K.oh]):n(prev?.onHand)});
+    prev?upd++:add++;writes.push([id,body]);
+  }
+  $('#app').insertAdjacentHTML('afterbegin',`<div class="note" id="imp">بنستورد ${writes.length} صنف…</div>`);
+  for(let k=0;k<writes.length;k+=25){await Promise.all(writes.slice(k,k+25).map(([id,b])=>put('items',id,b).catch(()=>{})));const el=$('#imp');if(el)el.textContent=`بنستورد… ${Math.min(k+25,writes.length)} من ${writes.length}`}
+  toast(`اتضاف ${add} واتحدّث ${upd}${skip?`، واتساب ${skip} صف من غير اسم`:''}.`);render();
+}
+async function exportCalc(){
+  if(!lastCalc||!window.XLSX)return;
+  const {it,qty,rows}=lastCalc;
+  const aoa=[[`احتياج ${qty} ${it.unit} ${it.name}`],[],['الكود','الصنف','الوحدة','المطلوب','الرصيد','النقص','سعر الوحدة','التكلفة']];
+  rows.forEach(x=>aoa.push([x.it?.sku||'',x.it?.name||'',x.it?.unit||'',+x.need.toFixed(4),x.oh,null,n(x.it?.cost),null]));
+  const ws=XLSX.utils.aoa_to_sheet(aoa);const last=aoa.length;
+  for(let r=4;r<=last;r++){const x=rows[r-4];ws['F'+r]={t:'n',f:`MAX(0,D${r}-E${r})`,v:x.short};ws['H'+r]={t:'n',f:`D${r}*G${r}`,v:x.cost}}
+  ws['A'+(last+1)]={t:'s',v:'الإجمالي'};ws['H'+(last+1)]={t:'n',f:`SUM(H4:H${last})`,v:rows.reduce((s,x)=>s+x.cost,0)};
+  ws['!ref']=`A1:H${last+1}`;ws['!cols']=[{wch:12},{wch:34},{wch:8},{wch:12},{wch:12},{wch:12},{wch:12},{wch:14}];
+  const wb=XLSX.utils.book_new();wb.Workbook={Views:[{RTL:true}]};XLSX.utils.book_append_sheet(wb,ws,'الاحتياج');
+  const data=new Uint8Array(XLSX.write(wb,{type:'array',bookType:'xlsx'}));
+  const filename=`احتياج-${(it.sku||'')}-${qty}.xlsx`;
+  const dl=window.claude?.use?await window.claude.use('downloads').catch(()=>null):null;
+  try{if(dl){await dl.save({filename,data});return}
+    const url=URL.createObjectURL(new Blob([data]));const a=document.createElement('a');a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),4000)}
+  catch(e){toast('التنزيل ما تمّش.','bad')}
+}
+
+/* ---------- events ---------- */
+let armed=null;
+function arm(btn,label){if(armed===btn){armed=null;return true}if(armed){armed.classList.remove('armed')}armed=btn;const old=btn.textContent;btn.classList.add('armed');btn.textContent=label;setTimeout(()=>{if(armed===btn){armed=null;btn.classList.remove('armed');btn.textContent=old}},3500);return false}
+document.addEventListener('click',async e=>{
+  const tab=e.target.closest('.tab');if(tab){draft=null;setTab(tab.dataset.tab);return}
+  const open=e.target.closest('[data-open]');if(open){draft=null;view={tab:'boms',id:open.dataset.open};render();return}
+  const itr=e.target.closest('[data-item]');if(itr){view={tab:'items',id:itr.dataset.item};render();return}
+  const fst=e.target.closest('[data-fst]');if(fst){fSt=fst.dataset.fst;render();return}
+  const fty=e.target.closest('[data-fty]');if(fty){fType=fty.dataset.fty;render();return}
+  const b=e.target.closest('[data-act]');if(!b)return;
+  const a=b.dataset.act;
+  if(a==='back'){draft=null;view.id=null;render()}
+  else if(a==='newBom'){draft=null;view={tab:'boms',id:'new'};render()}
+  else if(a==='addLine'){syncDraftFromInputs();draft.lines.push({itemId:'',qty:'',scrap:0});render();const l=document.querySelectorAll('.li-item');l[l.length-1]?.focus()}
+  else if(a==='rmLine'){syncDraftFromInputs();draft.lines.splice(+b.dataset.k,1);if(!draft.lines.length)draft.lines.push({itemId:'',qty:'',scrap:0});render()}
+  else if(a==='saveBom')await saveBom('draft');
+  else if(a==='approve'){if(arm(b,'متأكد؟ اعتمد'))await saveBom('approved')}
+  else if(a==='archive'){const d=byId('boms',view.id);await put('boms',d.id,Object.assign({},d,{status:'archived'}),'أرشفة');draft=null;render()}
+  else if(a==='newVersion'){const d=byId('boms',view.id);draft={itemId:d.itemId,version:0,status:'draft',yieldQty:d.yieldQty,notes:d.notes,lines:JSON.parse(JSON.stringify(d.lines)),_for:'new'};if(d.sample)draft.sample=true;view.id='new';render();toast('دي نسخة جديدة من القائمة. عدّل واحفظ، والقديمة فضلت زي ما هي.')}
+  else if(a==='delBom'){if(arm(b,'دوس تاني للمسح')){await del('boms',view.id);draft=null;view.id=null;toast('اتمسحت.');render()}}
+  else if(a==='toCalc'){const d=byId('boms',view.id);view={tab:'calc',id:d.itemId};render()}
+  else if(a==='exportCalc')exportCalc();
+  else if(a==='newItem'){view={tab:'items',id:'new'};render()}
+  else if(a==='saveItem')await saveItem();
+  else if(a==='delItem'){const used=S.boms.some(x=>x.itemId===view.id||(x.lines||[]).some(l=>l.itemId===view.id));if(used){toast('الصنف ده داخل في قائمة مواد. شيله منها الأول.','bad');return}if(arm(b,'دوس تاني للمسح')){await del('items',view.id);toast('اتمسح.');setTab('items')}}
+  else if(a==='importXl')$('#xlFile').click();
+  else if(a==='clearSample'){if(arm(b,'متأكد؟ امسح')){for(const x of S.boms.filter(x=>x.sample===true))await del('boms',x.id);for(const x of S.items.filter(x=>x.sample===true))await del('items',x.id);toast('بيانات المثال اتمسحت.')}}
+});
+document.addEventListener('keydown',e=>{if(e.key==='Enter'){const r=e.target.closest('tr.click');if(r)r.click()}});
+document.addEventListener('change',e=>{
+  if(e.target.id==='xlFile'&&e.target.files[0]){importXl(e.target.files[0]);e.target.value=''}
+  if(e.target.id==='c-item'){view.id=e.target.value;runCalc()}
+  if(e.target.matches('.li-item,#f-item,#f-yield,.li-qty,.li-scrap')){syncDraftFromInputs();const f=document.activeElement?.id;render();if(f)document.getElementById(f)?.focus()}
+});
+let qT;document.addEventListener('input',e=>{
+  if(e.target.id==='q'){clearTimeout(qT);qT=setTimeout(()=>{q=e.target.value;const pos=e.target.selectionStart;render();const el=$('#q');if(el){el.focus();el.setSelectionRange(pos,pos)}},200)}
+  if(e.target.id==='c-qty')runCalc();
+  if(e.target.classList.contains('bad'))e.target.classList.remove('bad');
+});
+
+/* ---------- boot ---------- */
+let rT;const schedule=()=>{clearTimeout(rT);rT=setTimeout(()=>{const ae=document.activeElement;if(ae&&ae.closest&&ae.closest('#app')&&ae.matches('input,textarea,select'))return;if(view.tab==='items'&&view.id&&$('#i-name'))return;render()},40)};
+(async()=>{
+  const c=window.claude;
+  if(c&&typeof c.use==='function'){try{db=await c.use('db')}catch(e){db=null}}
+  if(db)mode='db';else{db=localDb();mode='local'}
+  const slow=setTimeout(()=>{if(loaded.size<COLS.length)$('#app').innerHTML='<div class="empty"><b>البيانات لسه ما وصلتش</b>الاتصال بطيء. استنى شوية.</div>'},10000);
+  COLS.forEach(col=>db.collection(col).onSnapshot(snap=>{S[col]=snap.docs.map(d=>Object.assign({id:d.id},d.data()));loaded.add(col);if(loaded.size===COLS.length)clearTimeout(slow);schedule()},
+    err=>{loaded.add(col);schedule();toast('الاتصال بالبيانات وقف. اعمل ريفريش.','bad')}));
+  render();
+})();
+</script>
+
+</body></html>
