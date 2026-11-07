@@ -1372,13 +1372,13 @@ function renderBills(){
     const sids=[...new Set(S.bills.map(b=>b.supplierId))];
     const rows=sids.map(sid=>({sid,due:supplierDue(sid),bills:S.bills.filter(b=>b.supplierId===sid).length,overdue:S.bills.filter(b=>b.supplierId===sid&&billStatus(b)!=='paid'&&b.dueDate&&b.dueDate<today()).length})).filter(x=>match(supName(x.sid))).sort((a,b)=>b.due-a.due);
     const row=x=>`<tr class="click" data-a="openSupplierLedger" data-id="${x.sid}"><td><b>${esc(supName(x.sid))}</b></td><td class="num">${x.bills}</td><td class="num ${x.overdue?'':''}" style="${x.overdue?'color:var(--bad)':''}">${x.overdue||'—'}</td><td class="num"><b>${money(x.due)}</b></td></tr>`;
-    return head('فواتير الموردين','',tools+searchBox('اسم المورد')+`<button class="btn w" data-a="openingBalance">رصيد افتتاحي</button>`)+
+    return head('فواتير الموردين','',tools+searchBox('اسم المورد')+`<button class="btn w" data-a="openingBalance">رصيد افتتاحي</button><button type="button" class="btn w" data-a="exportOpeningXlsx">تصدير قالب الأرصدة الافتتاحية</button><label class="btn w" style="cursor:pointer;margin:0">استيراد أرصدة من Excel<input type="file" id="openingFile" accept=".xlsx,.xls,.csv" style="display:none"></label>`)+
     `<div class="kpis"><div class="kpi ${totalDue?'warn':''}"><small>إجمالي المستحق للموردين</small><b>${money(totalDue)}</b><span>${sids.length} مورد عليهم فواتير</span></div><div class="kpi ${overdue.length?'bad':''}"><small>فواتير متأخرة السداد</small><b>${overdue.length}</b></div></div>
     <section class="panel">${tbl(['المورد',['عدد الفواتير','num'],['متأخرة','num'],['الرصيد المستحق','num']],rows.map(row),'لسه مفيش موردين عليهم فواتير.',a=>money(sum(a,x=>x.due)))}</section>`;
   }
   const list=S.bills.map(b=>({b,st:billStatus(b)})).filter(({b})=>match(b.no,supName(b.supplierId),b.grn)).sort((a,b)=>(b.b.date||'').localeCompare(a.b.date||''));
   const row=({b,st})=>{const[l,t]=BILL_ST[st];const rem=Math.max(0,(+b.amount||0)-(+b.paid||0));const late=st!=='paid'&&b.dueDate&&b.dueDate<today();return`<tr class="click" data-a="openBill" data-id="${b.id}"><td>${code(b.no)}${b.opening?' '+chip('رصيد افتتاحي','mute'):''}</td><td>${esc(supName(b.supplierId))}</td><td class="code">${b.date}</td><td class="code">${late?chip(b.dueDate,'bad'):b.dueDate||'—'}</td><td class="num">${money(b.amount)}</td><td class="num">${money(b.paid||0)}</td><td class="num">${money(rem)}</td><td>${chip(l,t)}</td></tr>`};
-  return head('فواتير الموردين','بتتعمل تلقائي لما استلام يتقبل في فحص الجودة — فاتورة واحدة لكل إذن استلام، بتكبر كل ما صنف فيه يتفحص.',tools+searchBox('مورد، رقم فاتورة، أو إذن استلام')+`<button class="btn w" data-a="openingBalance">رصيد افتتاحي</button>`)+
+  return head('فواتير الموردين','بتتعمل تلقائي لما استلام يتقبل في فحص الجودة — فاتورة واحدة لكل إذن استلام، بتكبر كل ما صنف فيه يتفحص.',tools+searchBox('مورد، رقم فاتورة، أو إذن استلام')+`<button class="btn w" data-a="openingBalance">رصيد افتتاحي</button><button type="button" class="btn w" data-a="exportOpeningXlsx">تصدير قالب الأرصدة الافتتاحية</button><label class="btn w" style="cursor:pointer;margin:0">استيراد أرصدة من Excel<input type="file" id="openingFile" accept=".xlsx,.xls,.csv" style="display:none"></label>`)+
   `<div class="kpis"><div class="kpi ${totalDue?'warn':''}"><small>إجمالي المستحق للموردين</small><b>${money(totalDue)}</b><span>${S.bills.length} فاتورة</span></div><div class="kpi ${overdue.length?'bad':''}"><small>فواتير متأخرة السداد</small><b>${overdue.length}</b><span>فات ميعاد استحقاقها</span></div></div>
   <section class="panel">${tbl(['رقم الفاتورة','المورد','التاريخ','الاستحقاق',['القيمة','num'],['المسدد','num'],['المتبقي','num'],'الحالة'],list.map(row),S.bills.length?'مفيش نتايج للبحث ده.':'<b>مفيش فواتير لسه</b>أي استلام يتقبل في فحص الجودة بيعمل فاتورة هنا تلقائي.')}</section>`;
 }
@@ -1396,6 +1396,44 @@ function openSupplierLedger(sid){
   <div class="panel">${tbl(['التاريخ','النوع','المرجع',['مدين (فاتورة)','num'],['دائن (سداد)','num'],['الرصيد','num']],rows.map(tr),'لسه مفيش حركات على المورد ده.')}</div>
   <div class="actions"><div class="gap"><button class="btn" data-a="openingBalance" data-id="${sid}">رصيد افتتاحي إضافي</button><button class="btn pri" data-a="paySupplier" data-id="${sid}">سدّد للمورد</button></div></div>`);
 }
+async function exportOpeningXlsx(){
+  if(!S.suppliers.length){toast('مفيش موردين لسه','bad');return}
+  const X=await loadXLSX(),wb=X.utils.book_new();wb.Workbook={Views:[{RTL:true}]};
+  const head=['كود المورد','اسم المورد','المبلغ المستحق','تاريخ الرصيد','ملاحظات'];
+  const rows=[...S.suppliers].sort((a,b)=>String(a.code||'~').localeCompare(String(b.code||'~'))).map(s=>[s.code||'',s.name||'',0,today(),'']);
+  const ws=X.utils.aoa_to_sheet([head,...rows]);ws['!cols']=head.map((h,i)=>({wch:i===1?28:i===4?30:16}));
+  X.utils.book_append_sheet(wb,ws,'أرصدة افتتاحية');
+  const help=X.utils.aoa_to_sheet([['تعليمات'],['اكتب المبلغ المستحق لكل مورد في عمود «المبلغ المستحق». الصف اللي فاضل فيه صفر أو فاضي هيتجاهل.'],['متغيّرش عمود «كود المورد» أو «اسم المورد» — بيهم بيتم التعرف على المورد الصح وقت الرفع. لو مورد كوده فاضي، هيتعرف بالاسم بالظبط.'],['عمود «تاريخ الرصيد» اختياري، سيبه زي ما هو (النهارده) لو مش محتاج تاريخ تاني.']]);
+  help['!cols']=[{wch:85}];X.utils.book_append_sheet(wb,help,'تعليمات');
+  if(await saveXlsx(X,wb,'أرصدة افتتاحية للموردين.xlsx'))toast('اتنزّل القالب. املا المبلغ لكل مورد وارفعه تاني');
+}
+async function importOpeningFile(file){
+  const X=await loadXLSX();const wb=X.read(await file.arrayBuffer(),{type:'array'});const ws=wb.Sheets[wb.SheetNames[0]];
+  const rows=X.utils.sheet_to_json(ws,{header:1,defval:'',raw:true});
+  if(!rows.length){toast('الملف فاضي','bad');return}
+  const header=rows[0].map(h=>String(h||'').trim());
+  const codeIdx=header.indexOf('كود المورد'),nameIdx=header.indexOf('اسم المورد'),amtIdx=header.indexOf('المبلغ المستحق'),dateIdx=header.indexOf('تاريخ الرصيد'),noteIdx=header.indexOf('ملاحظات');
+  if(nameIdx<0||amtIdx<0){toast('الملف لازم يكون نفس قالب «تصدير قالب الأرصدة الافتتاحية»','bad');return}
+  let matched=0,skipped=0;
+  for(const r of rows.slice(1)){
+    const amt=toNum(r[amtIdx]);if(!amt||amt<=0)continue;
+    const code=codeIdx>=0?String(r[codeIdx]??'').trim():'',name=String(r[nameIdx]??'').trim();
+    const sup=(code&&S.suppliers.find(s=>String(s.code||'').trim()===code))||S.suppliers.find(s=>s.name===name);
+    if(!sup){skipped++;continue}
+    const date=(dateIdx>=0&&String(r[dateIdx]||'').trim())||today();
+    const notes=(noteIdx>=0&&String(r[noteIdx]||'').trim())||'رصيد افتتاحي قبل استخدام إمداد';
+    const no=genNo('OPB');
+    await put('bills',no,{no,supplierId:sup.id,date,dueDate:date,amount:amt,paid:0,lines:[],opening:true,notes},'رصيد افتتاحي من ملف Excel');
+    matched++;
+  }
+  if(!matched){toast('مفيش ولا صف اتطابق مع مورد عنده مبلغ أكبر من صفر','bad');return}
+  toast(`اتسجل رصيد افتتاحي لـ ${matched} مورد${skipped?` (${skipped} صف من غير مورد متطابق)`:''}`);
+  schedule();
+}
+document.addEventListener('change',e=>{
+  if(e.target.id!=='openingFile'||!e.target.files[0])return;
+  const f=e.target.files[0];e.target.value='';run(()=>importOpeningFile(f));
+});
 function openingBalanceForm(sid){
   if(!S.suppliers.length){toast('أضف مورد الأول','bad');return}
   openDrawer('رصيد افتتاحي لمورد',`<form class="main"><div class="fg">
@@ -2241,6 +2279,7 @@ const ACT={
   openPayment:d=>openPayment(d.id),
   openSupplierLedger:d=>openSupplierLedger(d.id),
   openingBalance:d=>openingBalanceForm(d&&d.id),
+  exportOpeningXlsx:(d,b)=>run(async()=>{b.disabled=true;try{await exportOpeningXlsx()}finally{b.disabled=false}}),
   exportLedger:(d,b)=>run(async()=>{
     const i=byId('items',d.id);if(!i)return;const rows=ledgerRows(d.id);
     b.disabled=true;const t=b.textContent;b.textContent='بنجهّز الملف…';
@@ -2289,7 +2328,7 @@ function arm(b,fn){if(b.dataset.armed){delete b.dataset.armed;fn();return}const 
 // action -> module it belongs to; ':view' opens a record (read allowed if the module is visible)
 const ACT_MOD={addSupplier:'suppliers',editSupplier:'suppliers:view',autoCodeSup:'suppliers',xlImportSup:'suppliers',xlImportItems:'inv',addWh:'wh',editWh:'wh:view',seedWh:'wh',addDept:'dept',editDept:'dept:view',seedDept:'dept',addItem:'inv',editItem:'inv:view',move:'inv',addRfq:'rfqs',rfqFromItem:'rfqs',openRfq:'rfqs:view',award:'rfqs',setFx:'rfqs',delQuote:'rfqs',cancelRfq:'rfqs',paste:'rfqs',invite:'rfqs',copyInvite:'rfqs',
   addPo:'pos',openPo:'pos:view',editPo:'pos',sendPo:'pos',cancelPo:'pos',approvePo:'approve',rejectPo:'approve',receive:'grn',grnNew:'grn',openGrn:'grn:view',inspect:'qa',issueNew:'issue',issueBranch:'issue',openIssue:'issue:view',editSale:'sales:view',
-  iretNew:'iret',openIret:'iret:view',rretNew:'rret',openRret:'rret:view',addShip:'ship',editShip:'ship',shipNext:'ship',openShip:'ship:view',settings:'admin',clearSample:'admin',setRole:'admin',delRole:'admin',addRole:'admin',dismissReq:'admin',approveDevice:'admin',exportXlsx:'reports',copyReport:'reports:view',openLedger:'inv:view',exportLedger:'reports',addCount:'count',openCount:'count:view',saveCount:'count',postCount:'count',cancelCount:'count',exportCountXlsx:'count:view',applyRevalPct:'reval',postReval:'reval',openReval:'reval:view',exportRevalXlsx:'reval:view',openBill:'bills:view',paySupplier:'payments',openPayment:'payments:view',openSupplierLedger:'bills:view',openingBalance:'bills'};
+  iretNew:'iret',openIret:'iret:view',rretNew:'rret',openRret:'rret:view',addShip:'ship',editShip:'ship',shipNext:'ship',openShip:'ship:view',settings:'admin',clearSample:'admin',setRole:'admin',delRole:'admin',addRole:'admin',dismissReq:'admin',approveDevice:'admin',exportXlsx:'reports',copyReport:'reports:view',openLedger:'inv:view',exportLedger:'reports',addCount:'count',openCount:'count:view',saveCount:'count',postCount:'count',cancelCount:'count',exportCountXlsx:'count:view',applyRevalPct:'reval',postReval:'reval',openReval:'reval:view',exportRevalXlsx:'reval:view',openBill:'bills:view',paySupplier:'payments',openPayment:'payments:view',openSupplierLedger:'bills:view',openingBalance:'bills',exportOpeningXlsx:'bills'};
 const COL_MOD={suppliers:'suppliers',items:'inv',pos:'pos',shipments:'ship',warehouses:'wh',depts:'dept'};
 const actAllowed=(name,d)=>{let spec=name==='del'?COL_MOD[d.col]:ACT_MOD[name];if(!spec)return true;const[m,v]=spec.split(':');return v==='view'?(canSee(m)||canEditMod(m)):canEditMod(m)};
 document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(!b)return;const name=b.dataset.a,a=ACT[name];if(!a)return;
