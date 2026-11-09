@@ -842,6 +842,8 @@ function renderUsers(){
   <section class="panel"><h2>أضف شخص من المؤسسة</h2><div class="pbody picker"><input class="search" id="userSearch" data-in="usearch" placeholder="اكتب اسم أو إيميل" style="width:100%" autocomplete="off"><div class="res" id="userRes" hidden></div></div></section>
   <section class="panel"><h2>الفريق <small>${S.roles.length} شخص</small></h2>${tbl(['الشخص','الدور','آخر تعديل',''],S.roles.map(r=>`<tr><td>${whoH(r.id)}</td><td>${roleSel(r.id,r.role)}</td><td><span class="code">${fmtTs(r.updatedAt)}</span><span class="sub">${whoH(r.updatedBy)}</span></td><td><button class="btn sm danger" data-a="delRole" data-id="${esc(r.id)}">شيل الصلاحية</button></td></tr>`),'لسه مفيش حد متعيّن. أي حد يفتح الصفحة من غير دور هيقدر يبعت طلب صلاحية يظهرلك هنا، أو دور عليه بالاسم فوق.')}</section>
   <section class="panel"><h2>مين يقدر يعمل إيه</h2>${tbl(['الدور','بيشوف','بيسجّل في'],['admin',...ASSIGNABLE].map(k=>{const r=ROLES[k];return`<tr><td><b>${r.t}</b>${r.approve?'<span class="sub">بيعتمد أوامر الشراء</span>':''}${k==='admin'?'<span class="sub">الإيميلات اللي في جدول admins</span>':''}</td><td>${lab(r.see)}${k==='admin'?'، والمستخدمين والإعدادات':''}</td><td>${r.edit==='*'?'كل حاجة':r.edit.length?lab(r.edit):'مش بيسجّل'}</td></tr>`}),'')}</section>
+  <section class="panel"><h2>منطقة الخطر</h2><div class="pbody" style="padding:14px"><div class="note warn"><span><b>تفريغ البرنامج لعرض تجريبي (ديمو):</b> بيمسح كل بيانات العمل (موردين، أصناف، أوامر، فواتير... كل حاجة) ويرجّع البرنامج لوحة بيضاء تمامًا، بعد ما ينزّلك نسخة احتياطية كاملة أوتوماتيك الأول. الصلاحيات والأدوار بتفضل زي ما هي وملك المدير هيفضل يقدر يدخل. سجل النشاط الأمني (audit) مينفعش يتمسح خالص حتى من غير دي — ده مقصود، فهيفضل فيه تاريخ قديم ظاهر في شاشة «سجل النشاط» لو فتحتها وقت العرض.</span><button class="btn danger w" data-a="wipeDemo" style="margin-top:10px">تفريغ البرنامج دلوقتي</button></div>
+  <div class="pbody" style="padding:14px"><div class="note"><span><b>استعادة من نسخة احتياطية:</b> ارفع ملف JSON (زي اللي بينزّل من زرار التفريغ فوق، أو من backup.ps1) وهيكتب فوق البيانات الحالية بقيم النسخة دي. أي حاجة اتسجلت بعد تاريخ النسخة بتفضل زي ما هي (الاستعادة بتحدّث مش بتمسح). محتاج تكون النسخة المنشورة على الإنترنت متصلة، مش وضع محلي.</span><label class="btn w" style="cursor:pointer;margin-top:10px">استعادة من نسخة<input type="file" id="restoreFile" accept=".json" style="display:none"></label></div></div></section>
   <section class="panel"><h2>الأجهزة <small>${S.devices.length}</small></h2><div class="note"><span>أي حد بدور غير مدير/إدارة لازم يستخدم إمداد من جهاز معتمد. أول ما حد يفتح الصفحة من جهاز جديد، هيتسجّل هنا منتظر الموافقة ومش هيقدر يستخدم البرنامج لحد ما توافق.</span></div>${tbl(['الجهاز','طلب بواسطة','وقت الطلب','الحالة',''],[...S.devices].sort((a,b)=>(a.approved==='yes')-(b.approved==='yes')||(b.requestedAt||0)-(a.requestedAt||0)).map(d=>`<tr><td><span class="code">${esc(d.id.slice(0,14))}…</span><span class="sub">${esc((d.ua||'').slice(0,60))}</span></td><td>${whoH(d.requestedBy)}</td><td class="code">${fmtTs(d.requestedAt)}</td><td>${d.approved==='yes'?chip('معتمد','ok'):chip('منتظر الموافقة','warn')}</td><td><span class="tags">${d.approved!=='yes'?`<button class="btn sm pri" data-a="approveDevice" data-id="${esc(d.id)}">اعتماد</button>`:''}<button class="btn sm danger" data-a="del" data-col="devices" data-id="${esc(d.id)}">${d.approved==='yes'?'إلغاء الاعتماد':'رفض'}</button></span></td></tr>`),'لسه مفيش أجهزة متسجّلة.')}</section>`;
 }
 let searchSeq=0;
@@ -2198,6 +2200,60 @@ function openDrawer(title,html,onSubmit,onMount){
 function closeDrawer(){$('#drawer').hidden=true;drawerRO=false;$('#dBody').innerHTML='';$('#dChat').replaceChildren();if(lastFocus&&document.contains(lastFocus))try{lastFocus.focus()}catch(e){}}
 let tt=0;function toast(m,k){const t=$('#toast');t.textContent=m;t.className='toast'+(k==='bad'?' bad':'');t.hidden=false;clearTimeout(tt);tt=setTimeout(()=>t.hidden=true,k==='bad'?5200:2800)}
 
+/* ---------- demo wipe (danger zone) ---------- */
+function downloadJSONFile(filename,obj){
+  const blob=new Blob([JSON.stringify(obj)],{type:'application/json'});
+  const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),5000);
+}
+function fullSnapshot(){
+  const docs=[];COLS.forEach(c=>{(S[c]||[]).forEach(x=>docs.push({col:c,id:x.id,data:strip(x)}))});
+  return{takenAt:new Date().toISOString(),docs,profiles:[]};
+}
+async function wipeDemo(){
+  if(myRole()!=='admin'&&!(me.owner||me.editor)){toast('مش ضمن صلاحياتك','bad');return}
+  const stamp=new Date().toISOString().slice(0,16).replace(/[:T]/g,'-');
+  downloadJSONFile(`إمداد-نسخة-قبل-التفريغ-${stamp}.json`,fullSnapshot());
+  await new Promise(r=>setTimeout(r,400)); // let the download start before the confirm prompt steals focus
+  const typed=prompt('اتنزّلت نسخة احتياطية كاملة قبل التفريغ. اكتب "تفريغ" بالظبط عشان تأكد:');
+  if(typed!=='تفريغ'){toast('اتلغى. مفيش حاجة اتمسحت');return}
+  let deleted=0,failed=0;
+  for(const c of COLS){
+    if(c==='audit')continue; // غير قابل للمسح أصلًا حتى للمدير (مقصود)
+    for(const x of [...S[c]]){
+      try{await remove(c,x.id);deleted++}catch(e){failed++}
+    }
+  }
+  toast(`اتفرّغ البرنامج. اتمسح ${deleted} سجل${failed?` (${failed} فشل المسح)`:''}`);
+}
+async function restoreFromFile(file){
+  if(myRole()!=='admin'&&!(me.owner||me.editor)){toast('مش ضمن صلاحياتك','bad');return}
+  let dump;try{dump=JSON.parse(await file.text())}catch(e){toast('الملف مش JSON صحيح','bad');return}
+  if(!dump||!Array.isArray(dump.docs)){toast('شكل الملف مش متطابق مع ملف النسخة الاحتياطية','bad');return}
+  const rows=dump.docs.filter(d=>d.col!=='audit');
+  const when=dump.takenAt?new Date(dump.takenAt).toLocaleString('ar-EG'):'غير معروف';
+  const typed=prompt(`الملف فيه ${dump.docs.length} سجل (اتاخد: ${when}). هيكتب فوق بياناتك الحالية بقيم النسخة دي. اكتب "استرجاع" بالظبط عشان تكمل:`);
+  if(typed!=='استرجاع'){toast('اتلغى. مفيش حاجة اتغيرت');return}
+  const cfg=window.EMDAD_CONFIG;
+  if(!cfg||!window.emdadSupabase){toast('الاستعادة شغالة بس على النسخة المنشورة المتصلة بالإنترنت','bad');return}
+  const{data:{session}}=await window.emdadSupabase.auth.getSession();
+  if(!session){toast('لازم تكون مسجّل دخول','bad');return}
+  const headers={apikey:cfg.supabaseAnonKey,Authorization:'Bearer '+session.access_token,'Content-Type':'application/json',Prefer:'resolution=merge-duplicates'};
+  let done=0,failed=0;
+  for(let i=0;i<rows.length;i+=200){
+    const batch=rows.slice(i,i+200);
+    try{
+      const res=await fetch(`${cfg.supabaseUrl}/rest/v1/docs?on_conflict=col,id`,{method:'POST',headers,body:JSON.stringify(batch)});
+      if(!res.ok)throw new Error(await res.text());
+      done+=batch.length;
+    }catch(e){failed+=batch.length;console.error('restore batch failed',e)}
+  }
+  toast(`اتسجل ${done} سجل من النسخة${failed?` (${failed} فشل)`:''}. اعمل ريفريش للصفحة عشان تشوف البيانات محدّثة`);
+}
+document.addEventListener('change',e=>{
+  if(e.target.id!=='restoreFile'||!e.target.files[0])return;
+  const f=e.target.files[0];e.target.value='';run(()=>restoreFromFile(f));
+});
+
 /* ---------- actions ---------- */
 async function run(fn){try{await fn()}catch(e){console.error(e);toast(errMsg(e),'bad')}}
 const postingCounts=new Set(); // guards against posting the same جرد twice from a double/triple click before the status round-trips back
@@ -2323,13 +2379,14 @@ const ACT={
     if(d.col==='items'&&S.movements.some(m=>m.itemId===d.id)){toast('الصنف ده ليه حركات مخزنية مسجلة (استلام/صرف/جرد). مينفعش يتمسح عشان هنضيع تاريخه.','bad');return}
     await remove(d.col,d.id);closeDrawer();toast('اتحذف')
   })),
-  clearSample:(d,b)=>arm(b,()=>run(async()=>{let n=0;for(const c of COLS)for(const x of S[c].filter(x=>x.sample===true)){await remove(c,x.id);n++}toast(`اتمسح ${n} سجل مثال`)}))
+  clearSample:(d,b)=>arm(b,()=>run(async()=>{let n=0;for(const c of COLS)for(const x of S[c].filter(x=>x.sample===true)){await remove(c,x.id);n++}toast(`اتمسح ${n} سجل مثال`)})),
+  wipeDemo:()=>run(wipeDemo)
 };
 function arm(b,fn){if(b.dataset.armed){delete b.dataset.armed;fn();return}const t=b.textContent;b.dataset.armed='1';b.textContent='اضغط تاني للتأكيد';setTimeout(()=>{if(b.isConnected&&b.dataset.armed){delete b.dataset.armed;b.textContent=t}},3500)}
 // action -> module it belongs to; ':view' opens a record (read allowed if the module is visible)
 const ACT_MOD={addSupplier:'suppliers',editSupplier:'suppliers:view',autoCodeSup:'suppliers',xlImportSup:'suppliers',xlImportItems:'inv',addWh:'wh',editWh:'wh:view',seedWh:'wh',addDept:'dept',editDept:'dept:view',seedDept:'dept',addItem:'inv',editItem:'inv:view',move:'inv',addRfq:'rfqs',rfqFromItem:'rfqs',openRfq:'rfqs:view',award:'rfqs',setFx:'rfqs',delQuote:'rfqs',cancelRfq:'rfqs',paste:'rfqs',invite:'rfqs',copyInvite:'rfqs',
   addPo:'pos',openPo:'pos:view',editPo:'pos',sendPo:'pos',cancelPo:'pos',approvePo:'approve',rejectPo:'approve',receive:'grn',grnNew:'grn',openGrn:'grn:view',inspect:'qa',issueNew:'issue',issueBranch:'issue',openIssue:'issue:view',editSale:'sales:view',
-  iretNew:'iret',openIret:'iret:view',rretNew:'rret',openRret:'rret:view',addShip:'ship',editShip:'ship',shipNext:'ship',openShip:'ship:view',settings:'admin',clearSample:'admin',setRole:'admin',delRole:'admin',addRole:'admin',dismissReq:'admin',approveDevice:'admin',exportXlsx:'reports',copyReport:'reports:view',openLedger:'inv:view',exportLedger:'reports',addCount:'count',openCount:'count:view',saveCount:'count',postCount:'count',cancelCount:'count',exportCountXlsx:'count:view',applyRevalPct:'reval',postReval:'reval',openReval:'reval:view',exportRevalXlsx:'reval:view',openBill:'bills:view',paySupplier:'payments',openPayment:'payments:view',openSupplierLedger:'bills:view',openingBalance:'bills',exportOpeningXlsx:'bills'};
+  iretNew:'iret',openIret:'iret:view',rretNew:'rret',openRret:'rret:view',addShip:'ship',editShip:'ship',shipNext:'ship',openShip:'ship:view',settings:'admin',clearSample:'admin',wipeDemo:'admin',setRole:'admin',delRole:'admin',addRole:'admin',dismissReq:'admin',approveDevice:'admin',exportXlsx:'reports',copyReport:'reports:view',openLedger:'inv:view',exportLedger:'reports',addCount:'count',openCount:'count:view',saveCount:'count',postCount:'count',cancelCount:'count',exportCountXlsx:'count:view',applyRevalPct:'reval',postReval:'reval',openReval:'reval:view',exportRevalXlsx:'reval:view',openBill:'bills:view',paySupplier:'payments',openPayment:'payments:view',openSupplierLedger:'bills:view',openingBalance:'bills',exportOpeningXlsx:'bills'};
 const COL_MOD={suppliers:'suppliers',items:'inv',pos:'pos',shipments:'ship',warehouses:'wh',depts:'dept'};
 const actAllowed=(name,d)=>{let spec=name==='del'?COL_MOD[d.col]:ACT_MOD[name];if(!spec)return true;const[m,v]=spec.split(':');return v==='view'?(canSee(m)||canEditMod(m)):canEditMod(m)};
 document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(!b)return;const name=b.dataset.a,a=ACT[name];if(!a)return;
