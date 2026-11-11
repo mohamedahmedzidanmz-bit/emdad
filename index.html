@@ -1358,7 +1358,11 @@ function renderQa(){
 const BILL_ST={unpaid:['غير مسددة','bad'],partial:['مسددة جزئيًا','warn'],paid:['مسددة بالكامل','ok']};
 const PAY_METHOD={cash:'نقدي',bank:'تحويل بنكي',cheque:'شيك'};
 function billStatus(b){const paid=+b.paid||0,amt=+b.amount||0;return paid<=0?'unpaid':paid+0.01<amt?'partial':'paid'}
-function supplierDue(sid){return Math.round(sum(S.bills.filter(b=>b.supplierId===sid),b=>Math.max(0,(+b.amount||0)-(+b.paid||0)))*100)/100}
+function supplierDue(sid){
+  const billsDue=sum(S.bills.filter(b=>b.supplierId===sid),b=>Math.max(0,(+b.amount||0)-(+b.paid||0)));
+  const returned=sum(S.rreturns.filter(r=>r.supplierId===sid),r=>+r.value||0);
+  return Math.round((billsDue-returned)*100)/100;
+}
 function termsDays(terms){const m=String(terms||'').match(/\d+/);return m?+m[0]:0}
 // one bill per GRN: grows as each line on that receipt gets accepted in QA, matching the supplier's actual delivery note/invoice
 async function billForAcceptedInspection(x,acc){
@@ -1390,19 +1394,39 @@ function renderBills(){
   `<div class="kpis"><div class="kpi ${totalDue?'warn':''}"><small>إجمالي المستحق للموردين</small><b>${money(totalDue)}</b><span>${S.bills.length} فاتورة</span></div><div class="kpi ${overdue.length?'bad':''}"><small>فواتير متأخرة السداد</small><b>${overdue.length}</b><span>فات ميعاد استحقاقها</span></div></div>
   <section class="panel">${tbl(['رقم الفاتورة','المورد','التاريخ','الاستحقاق',['القيمة','num'],['المسدد','num'],['المتبقي','num'],'الحالة'],list.map(row),S.bills.length?'مفيش نتايج للبحث ده.':'<b>مفيش فواتير لسه</b>أي استلام يتقبل في فحص الجودة بيعمل فاتورة هنا تلقائي.')}</section>`;
 }
-function supplierLedgerRows(sid){
+function supplierLedgerRows(sid,from,to){
   const bills=S.bills.filter(b=>b.supplierId===sid).map(b=>({date:b.date,type:b.opening?'opening':'bill',ref:b.no,debit:+b.amount||0,credit:0,ts:b.ts||0}));
   const pays=S.payments.filter(p=>p.supplierId===sid).map(p=>({date:p.date,type:'payment',ref:p.no,debit:0,credit:+p.amount||0,ts:p.ts||0}));
-  const rows=[...bills,...pays].sort((a,b)=>(a.date||'').localeCompare(b.date||'')||a.ts-b.ts);
-  let bal=0;return rows.map(r=>{bal=Math.round((bal+r.debit-r.credit)*100)/100;return Object.assign({},r,{bal})});
+  const rets=S.rreturns.filter(r=>r.supplierId===sid).map(r=>({date:r.date,type:'return',ref:r.no,debit:0,credit:+r.value||0,ts:r.ts||0}));
+  const all=[...bills,...pays,...rets].sort((a,b)=>(a.date||'').localeCompare(b.date||'')||a.ts-b.ts);
+  let bal=0,opening=0;const rows=[];
+  for(const r of all){
+    if(to&&r.date>to)break;
+    bal=Math.round((bal+r.debit-r.credit)*100)/100;
+    if(from&&r.date<from){opening=bal;continue}
+    rows.push(Object.assign({},r,{bal}));
+  }
+  return{rows,opening};
 }
 function openSupplierLedger(sid){
   const s=byId('suppliers',sid);if(!s)return;
-  const rows=supplierLedgerRows(sid);
-  const tr=r=>`<tr><td class="code">${r.date}</td><td>${r.type==='opening'?'رصيد افتتاحي':r.type==='bill'?'فاتورة':'سداد'}</td><td>${code(r.ref)}</td><td class="num" style="color:var(--bad)">${r.debit?money(r.debit):'—'}</td><td class="num" style="color:var(--ok)">${r.credit?money(r.credit):'—'}</td><td class="num"><b>${money(r.bal)}</b></td></tr>`;
-  openDrawer(`كشف حساب ${s.name}`,`<div class="kv"><div><small>الرصيد المستحق حاليًا</small><b class="big">${money(supplierDue(sid))}</b></div><div><small>عدد الفواتير</small><b>${S.bills.filter(b=>b.supplierId===sid).length}</b></div><div><small>عدد السدادات</small><b>${S.payments.filter(p=>p.supplierId===sid).length}</b></div></div>
-  <div class="panel">${tbl(['التاريخ','النوع','المرجع',['مدين (فاتورة)','num'],['دائن (سداد)','num'],['الرصيد','num']],rows.map(tr),'لسه مفيش حركات على المورد ده.')}</div>
-  <div class="actions"><div class="gap"><button class="btn" data-a="openingBalance" data-id="${sid}">رصيد افتتاحي إضافي</button><button class="btn pri" data-a="paySupplier" data-id="${sid}">سدّد للمورد</button></div></div>`);
+  const tr=r=>`<tr><td class="code">${r.date}</td><td>${r.type==='opening'?'رصيد افتتاحي':r.type==='bill'?'فاتورة':r.type==='return'?'مرتجع لمورد':'سداد'}</td><td>${code(r.ref)}</td><td class="num" style="color:var(--bad)">${r.debit?money(r.debit):'—'}</td><td class="num" style="color:var(--ok)">${r.credit?money(r.credit):'—'}</td><td class="num"><b>${money(r.bal)}</b></td></tr>`;
+  const draw=()=>{
+    const from=($('#ledFrom')||{}).value||'',to=($('#ledTo')||{}).value||'';
+    const{rows,opening}=supplierLedgerRows(sid,from,to);
+    const panel=$('#ledPanel');if(!panel)return;
+    panel.innerHTML=(from?`<div class="kv"><div><small>الرصيد أول المدة</small><b>${money(opening)}</b></div></div>`:'')+
+      tbl(['التاريخ','النوع','المرجع',['مدين (فاتورة)','num'],['دائن (مرتجع/سداد)','num'],['الرصيد','num']],rows.map(tr),'لسه مفيش حركات على المورد ده في الفترة دي.');
+  };
+  openDrawer(`كشف حساب ${s.name}`,`<div class="kv"><div><small>الرصيد المستحق حاليًا</small><b class="big">${money(supplierDue(sid))}</b></div><div><small>عدد الفواتير</small><b>${S.bills.filter(b=>b.supplierId===sid).length}</b></div><div><small>عدد السدادات</small><b>${S.payments.filter(p=>p.supplierId===sid).length}</b></div><div><small>عدد المرتجعات</small><b>${S.rreturns.filter(r=>r.supplierId===sid).length}</b></div></div>
+  <div class="fg"><label class="f"><span>من تاريخ</span><input type="date" id="ledFrom" class="in"></label><label class="f"><span>لحد تاريخ</span><input type="date" id="ledTo" class="in"></label></div>
+  <div id="ledPanel" class="panel"></div>
+  <div class="actions"><div class="gap"><button class="btn" data-a="openingBalance" data-id="${sid}">رصيد افتتاحي إضافي</button><button class="btn pri" data-a="paySupplier" data-id="${sid}">سدّد للمورد</button></div></div>`,
+  null,body=>{
+    body.querySelector('#ledFrom').addEventListener('change',draw);
+    body.querySelector('#ledTo').addEventListener('change',draw);
+    draw();
+  });
 }
 async function exportOpeningXlsx(){
   if(!S.suppliers.length){toast('مفيش موردين لسه','bad');return}
