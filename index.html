@@ -451,7 +451,8 @@ const ROLES={
 };
 const ASSIGNABLE=['manager','purchasing','warehouse','quality','shipping','clerk','accountant','viewer'];
 function myRole(){if(mode!=='live')return'admin';if(me.owner||me.editor)return'admin';const r=me.id&&S.roles.find(x=>x.id===me.id);return r&&ROLES[r.role]&&r.role!=='admin'?r.role:null}
-const roleDef=()=>ROLES[myRole()]||{see:['dash'],edit:[]};
+function effRole(role){const base=ROLES[role];if(!base||role==='admin')return base;const ov=(cfg().rolePerms||{})[role];if(!ov)return base;return Object.assign({},base,{see:ov.see||base.see,edit:ov.edit||base.edit,approve:'approve'in ov?!!ov.approve:base.approve})}
+const roleDef=()=>effRole(myRole())||{see:['dash'],edit:[]};
 function canSee(v){if(v==='users')return myRole()==='admin';const r=roleDef();return r.see==='*'||r.see.includes(v)}
 function canEditMod(m){if(!canWrite)return false;const role=myRole();if(m==='admin')return role==='admin';if(m==='approve')return!!roleDef().approve;const r=roleDef();return r.edit==='*'||r.edit.includes(m)}
 const uLabel=u=>!u?'—':u===me.id?'انت':(names[u]||'…');
@@ -845,11 +846,36 @@ function renderUsers(){
   ${reqs.length?`<section class="panel"><h2>طلبات صلاحية <small>${reqs.length}</small></h2>${tbl(['الشخص','وقت الطلب','الدور',''],reqs.map(r=>`<tr><td>${whoH(r.id)}</td><td class="code">${fmtTs(r.ts)}</td><td>${roleSel(r.id,'viewer')}</td><td><span class="tags"><button class="btn sm pri" data-a="addRole" data-id="${esc(r.id)}">وافق</button><button class="btn sm danger" data-a="dismissReq" data-id="${esc(r.id)}">ارفض</button></span></td></tr>`),'')}</section>`:''}
   <section class="panel"><h2>أضف شخص من المؤسسة</h2><div class="pbody picker"><input class="search" id="userSearch" data-in="usearch" placeholder="اكتب اسم أو إيميل" style="width:100%" autocomplete="off"><div class="res" id="userRes" hidden></div></div></section>
   <section class="panel"><h2>الفريق <small>${S.roles.length} شخص</small></h2>${tbl(['الشخص','الدور','آخر تعديل',''],S.roles.map(r=>`<tr><td>${whoH(r.id)}</td><td>${roleSel(r.id,r.role)}</td><td><span class="code">${fmtTs(r.updatedAt)}</span><span class="sub">${whoH(r.updatedBy)}</span></td><td><button class="btn sm danger" data-a="delRole" data-id="${esc(r.id)}">شيل الصلاحية</button></td></tr>`),'لسه مفيش حد متعيّن. أي حد يفتح الصفحة من غير دور هيقدر يبعت طلب صلاحية يظهرلك هنا، أو دور عليه بالاسم فوق.')}</section>
-  <section class="panel"><h2>مين يقدر يعمل إيه</h2>${tbl(['الدور','بيشوف','بيسجّل في'],['admin',...ASSIGNABLE].map(k=>{const r=ROLES[k];return`<tr><td><b>${r.t}</b>${r.approve?'<span class="sub">بيعتمد أوامر الشراء</span>':''}${k==='admin'?'<span class="sub">الإيميلات اللي في جدول admins</span>':''}</td><td>${lab(r.see)}${k==='admin'?'، والمستخدمين والإعدادات':''}</td><td>${r.edit==='*'?'كل حاجة':r.edit.length?lab(r.edit):'مش بيسجّل'}</td></tr>`}),'')}</section>
+  <section class="panel"><h2>مين يقدر يعمل إيه</h2><div class="note"><span>دور الأدمن ثابت دايمًا (كل الصلاحيات)، والباقي تقدر تعدّل شاشاته بتشيك بوكس من زرار "تعديل".</span></div>${tbl(['الدور','بيشوف','بيسجّل في',''],['admin',...ASSIGNABLE].map(k=>{const r=effRole(k);const custom=k!=='admin'&&cfg().rolePerms&&cfg().rolePerms[k];return`<tr><td><b>${r.t}</b>${r.approve?'<span class="sub">بيعتمد أوامر الشراء</span>':''}${k==='admin'?'<span class="sub">الإيميلات اللي في جدول admins</span>':''}${custom?'<span class="sub">مخصص</span>':''}</td><td>${lab(r.see)}${k==='admin'?'، والمستخدمين والإعدادات':''}</td><td>${r.edit==='*'?'كل حاجة':r.edit.length?lab(r.edit):'مش بيسجّل'}</td><td>${k==='admin'?'':`<button class="btn sm" data-a="editRolePerms" data-id="${k}">تعديل</button>`}</td></tr>`}),'')}</section>
   <section class="panel"><h2>منطقة الخطر</h2><div class="pbody" style="padding:14px"><div class="note${cfg().maintenance?' warn':''}"><span><b>${cfg().maintenance?'البرنامج معطّل دلوقتي':'تعطيل البرنامج مؤقتًا'}:</b> ${cfg().maintenance?'كل المستخدمين (غير المدير/الإدارة) شايفين شاشة "تحت الصيانة" دلوقتي بدل البرنامج. دوس الزرار عشان ترجّعه يشتغل لهم تاني.':'يقفل البرنامج مؤقتًا لأي حد غير المدير/الإدارة (بيشوفوا شاشة "تحت الصيانة") — مفيد وقت التفريغ/الاسترجاع عشان محدش يستخدم البرنامج ويعمل تعارض مع العملية.'}</span><button class="btn ${cfg().maintenance?'pri':'danger'} w" data-a="toggleMaintenance" style="margin-top:10px">${cfg().maintenance?'إلغاء التعطيل':'تعطيل البرنامج دلوقتي'}</button></div></div>
   <div class="pbody" style="padding:14px"><div class="note warn"><span><b>تفريغ البرنامج لعرض تجريبي (ديمو):</b> بيمسح كل بيانات العمل (موردين، أصناف، أوامر، فواتير... كل حاجة) ويرجّع البرنامج لوحة بيضاء تمامًا، بعد ما ينزّلك نسخة احتياطية كاملة أوتوماتيك الأول. الصلاحيات والأدوار بتفضل زي ما هي وملك المدير هيفضل يقدر يدخل. سجل النشاط الأمني (audit) مينفعش يتمسح خالص حتى من غير دي — ده مقصود، فهيفضل فيه تاريخ قديم ظاهر في شاشة «سجل النشاط» لو فتحتها وقت العرض.</span><button class="btn danger w" data-a="wipeDemo" style="margin-top:10px">تفريغ البرنامج دلوقتي</button></div>
   <div class="pbody" style="padding:14px"><div class="note"><span><b>استعادة من نسخة احتياطية:</b> ارفع ملف JSON (زي اللي بينزّل من زرار التفريغ فوق، أو من backup.ps1) وهيكتب فوق البيانات الحالية بقيم النسخة دي. أي حاجة اتسجلت بعد تاريخ النسخة بتفضل زي ما هي (الاستعادة بتحدّث مش بتمسح). محتاج تكون النسخة المنشورة على الإنترنت متصلة، مش وضع محلي.</span><label class="btn w" style="cursor:pointer;margin-top:10px">استعادة من نسخة<input type="file" id="restoreFile" accept=".json" style="display:none"></label></div></div></section>
   <section class="panel"><h2>الأجهزة <small>${S.devices.length}</small></h2><div class="note"><span>أي حد بدور غير مدير/إدارة لازم يستخدم إمداد من جهاز معتمد. أول ما حد يفتح الصفحة من جهاز جديد، هيتسجّل هنا منتظر الموافقة ومش هيقدر يستخدم البرنامج لحد ما توافق.</span></div>${tbl(['الجهاز','طلب بواسطة','وقت الطلب','الحالة',''],[...S.devices].sort((a,b)=>(a.approved==='yes')-(b.approved==='yes')||(b.requestedAt||0)-(a.requestedAt||0)).map(d=>`<tr><td><span class="code">${esc(d.id.slice(0,14))}…</span><span class="sub">${esc((d.ua||'').slice(0,60))}</span></td><td>${whoH(d.requestedBy)}</td><td class="code">${fmtTs(d.requestedAt)}</td><td>${d.approved==='yes'?chip('معتمد','ok'):chip('منتظر الموافقة','warn')}</td><td><span class="tags">${d.approved!=='yes'?`<button class="btn sm pri" data-a="approveDevice" data-id="${esc(d.id)}">اعتماد</button>`:''}<button class="btn sm danger" data-a="del" data-col="devices" data-id="${esc(d.id)}">${d.approved==='yes'?'إلغاء الاعتماد':'رفض'}</button></span></td></tr>`),'لسه مفيش أجهزة متسجّلة.')}</section>`;
+}
+const PERM_SCREENS=Object.entries(VIEWS).filter(([k])=>k!=='users').map(([k,v])=>[k,v.t]);
+function rolePermsForm(role){
+  const base=ROLES[role];if(!base)return;
+  const ov=(cfg().rolePerms||{})[role]||{};
+  const see=new Set(ov.see?ov.see:(base.see==='*'?PERM_SCREENS.map(([k])=>k):base.see));
+  const edit=new Set(ov.edit?ov.edit:(base.edit==='*'?PERM_SCREENS.map(([k])=>k):base.edit));
+  const approve='approve'in ov?!!ov.approve:!!base.approve;
+  const rows=PERM_SCREENS.map(([k,t])=>`<div class="line rcv" style="align-items:center"><span>${esc(t)}</span><label style="display:flex;gap:6px;align-items:center;white-space:nowrap"><input type="checkbox" name="see_${k}" value="1" ${see.has(k)?'checked':''}> يشوف</label><label style="display:flex;gap:6px;align-items:center;white-space:nowrap"><input type="checkbox" name="edit_${k}" value="1" ${edit.has(k)?'checked':''}> يسجّل</label></div>`).join('');
+  openDrawer(`صلاحيات ${base.t}`,`<form class="main">
+  <div class="note"><span>حدد الشاشات اللي الدور ده "يشوفها" و"يسجّل فيها". تحديد "يسجّل" بيحدد "يشوف" تلقائي معاه.</span></div>
+  <div class="lh rcv" style="margin-top:10px"><span>الشاشة</span><span>يشوف</span><span>يسجّل</span></div>
+  <div class="lines">${rows}</div>
+  <label class="line rcv" style="align-items:center;margin-top:10px"><input type="checkbox" name="approve" value="1" ${approve?'checked':''}><span>يقدر يعتمد أوامر الشراء فوق حد الاعتماد</span></label>
+  ${formActions('احفظ',(cfg().rolePerms||{})[role]?`<button type="button" class="btn" data-a="resetRolePerms" data-id="${role}">رجّع الافتراضي</button>`:'')}
+  </form>`,
+  async fd=>{
+    const d=Object.fromEntries(fd);
+    const editArr=PERM_SCREENS.map(([k])=>k).filter(k=>d['edit_'+k]==='1');
+    const seeArr=PERM_SCREENS.map(([k])=>k).filter(k=>d['see_'+k]==='1'||editArr.includes(k));
+    const rp=Object.assign({},cfg().rolePerms||{});
+    rp[role]={see:seeArr,edit:editArr,approve:d.approve==='1'};
+    await patch('settings','main',{rolePerms:rp},'تعديل صلاحيات '+base.t);
+    toast('اتحفظت صلاحيات '+base.t);
+  });
 }
 let searchSeq=0;
 async function userSearch(q){
@@ -1268,8 +1294,9 @@ function ireturnForm(issueId){
       if(!lines.length){toast('اكتب كمية مرتجعة لصنف واحد على الأقل','bad');return false}await patch('issues',sid,{lines:L},'مرتجع صرف')}
     else{lines=readLines(fd,true).map(l=>({itemId:l.itemId,qty:l.qty,cost:+(byId('items',l.itemId)||{}).cost||0}));if(!lines.length){toast('ضيف صنف واحد على الأقل','bad');return false}}
     const no=genNo('IRT');
-    await put('ireturns',no,{no,date:fd.get('date'),issueId:sid||'',issueNo,dept:fd.get('dept').trim(),reason:fd.get('reason'),condition:cond,notes:fd.get('notes'),lines,ts:Date.now()});
-    if(cond==='good')for(const[iid,q]of Object.entries(aggregate(lines)))await addMovement(iid,q,'ireturn',no,issueNo||fd.get('dept'));
+    const dept=fd.get('dept').trim();
+    await put('ireturns',no,{no,date:fd.get('date'),issueId:sid||'',issueNo,dept,reason:fd.get('reason'),condition:cond,notes:fd.get('notes'),lines,ts:Date.now()});
+    if(cond==='good')for(const[iid,q]of Object.entries(aggregate(lines)))await addMovement(iid,q,'ireturn',no,dept+(issueNo?' · '+issueNo:''));
     toast(cond==='good'?`اتسجل ${no} ورجع للمخزون`:`اتسجل ${no} كتالف`);
   },body=>{
     const f=body.querySelector('form'),wrap=body.querySelector('#irLines');
@@ -2389,6 +2416,8 @@ const ACT={
   }),
   dismissReq:d=>run(async()=>{await remove('requests',d.id);toast('اترفض الطلب')}),
   delRole:(d,b)=>arm(b,()=>run(async()=>{await remove('roles',d.id);toast('اتشالت الصلاحية')})),
+  editRolePerms:d=>rolePermsForm(d.id),
+  resetRolePerms:(d,b)=>arm(b,()=>run(async()=>{const rp=Object.assign({},cfg().rolePerms||{});delete rp[d.id];await patch('settings','main',{rolePerms:rp},'إرجاع صلاحيات '+ROLES[d.id].t+' للافتراضي');closeDrawer();toast('رجعت صلاحيات '+ROLES[d.id].t+' للافتراضي')})),
   invite:d=>run(async()=>{const r=byId('rfqs',d.id);if(!r||!canWrite)return;const inv=Object.assign({},r.invited||{});inv[d.s]=today();await patch('rfqs',d.id,{invited:inv});if(!$('#drawer').hidden)openRfq(d.id)}),
   copyInvite:d=>{const r=byId('rfqs',d.id);if(!r)return;copyText(inviteMsg(r,d.s||''));if(d.s&&canWrite){const inv=Object.assign({},r.invited||{});inv[d.s]=today();run(()=>patch('rfqs',d.id,{invited:inv}))}},
   addPo:()=>poForm(),openPo:d=>openPo(d.id),editPo:d=>poForm(d.id),
