@@ -142,10 +142,16 @@
   let channel = null, wasDown = false;
   const mapErr = e => { const c = String(e && e.code || ''); const err = new Error(e && e.message || 'خطأ في الحفظ'); err.code = c === '42501' || /row-level security/i.test(err.message) ? 'invalid_argument' : /fetch|network/i.test(err.message) ? 'unavailable' : c; return err; };
   function emit(col) { const s = subs.get(col); if (!s) return; const docs = [...s.map.entries()].map(([id, data]) => ({ id, data: () => data })); s.cbs.forEach(cb => { try { cb({ docs }); } catch (e) { console.error(e); } }); }
+  // "items" loads through a view that strips onHand/cost for the clerk role (a clerk still needs
+  // names/SKUs to pick items in GRN/issue forms, so the row itself can't just be blocked outright).
+  // Note this only covers the initial load: a live update for an item still arrives unmasked over the
+  // realtime channel below, since postgres_changes broadcasts straight from the docs table - a known,
+  // accepted gap of this fix, not something this view can close on its own.
   async function loadCol(col) {
     const all = new Map();
+    const table = col === 'items' ? 'docs_items_masked' : 'docs';
     for (let from = 0; ; from += 1000) {
-      const { data, error } = await sb.from('docs').select('id,data').eq('col', col).range(from, from + 999);
+      const { data, error } = await sb.from(table).select('id,data').eq('col', col).range(from, from + 999);
       if (error) throw mapErr(error);
       data.forEach(r => all.set(r.id, r.data));
       if (data.length < 1000) break;
@@ -166,6 +172,14 @@
         if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') wasDown = true;
       });
   }
+  // a phone/tablet that sleeps or switches apps can leave the realtime channel looking "SUBSCRIBED" while it
+  // has actually stopped delivering updates (no CLOSED/TIMED_OUT event fires) - so whenever the tab comes back
+  // to the front, or the device regains network, force a full refetch of everything rather than trust the channel
+  let lastResync = 0;
+  function resyncAll() { const now = Date.now(); if (now - lastResync < 3000) return; lastResync = now; subs.forEach((_, col) => loadCol(col).catch(console.error)); }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') resyncAll(); });
+  window.addEventListener('online', resyncAll);
+  window.addEventListener('pageshow', resyncAll);
   const db = {
     collection(col) {
       return {
