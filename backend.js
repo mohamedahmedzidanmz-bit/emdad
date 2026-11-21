@@ -93,6 +93,13 @@
     session = s;
     if (box) box.hidden = true;
     const u = s.user, meta = u.user_metadata || {};
+    // partner role: every business collection this account loads comes from the scaled view
+    // (docs_for_partner) instead of the real table - see loadCol. Reading their own roles row is
+    // always allowed by RLS regardless of role, so this check itself never needs special access.
+    try {
+      const { data: roleRow } = await sb.from('docs').select('data').eq('col', 'roles').eq('id', u.id).maybeSingle();
+      isPartner = !!(roleRow && roleRow.data && roleRow.data.role === 'partner');
+    } catch (e) { console.warn('role check', e); }
     // keep the user's display name in profiles so other people's screens can show it
     try {
       const { data } = await sb.from('profiles').select('name').eq('id', u.id).maybeSingle();
@@ -139,17 +146,29 @@
 
   /* ---------- db: collection(col).doc(id).set/delete + onSnapshot ---------- */
   const subs = new Map(); // col → {map, cbs}
-  let channel = null, wasDown = false;
+  let channel = null, wasDown = false, isPartner = false;
+  // every collection a "partner" account's normal screens read (purchasing, inventory, issuing,
+  // finance, shipping...) - everything EXCEPT roles/settings/requests/devices, which that account
+  // still needs its own real (unscaled) row of to even sign in and render the app shell at all.
+  const PARTNER_SCALED_COLS = new Set(['suppliers', 'rfqs', 'pos', 'grns', 'inspections', 'items',
+    'movements', 'issues', 'rreturns', 'ireturns', 'warehouses', 'depts', 'counts', 'sales',
+    'revals', 'bills', 'payments', 'shipments']);
   const mapErr = e => { const c = String(e && e.code || ''); const err = new Error(e && e.message || 'خطأ في الحفظ'); err.code = c === '42501' || /row-level security/i.test(err.message) ? 'invalid_argument' : /fetch|network/i.test(err.message) ? 'unavailable' : c; return err; };
   function emit(col) { const s = subs.get(col); if (!s) return; const docs = [...s.map.entries()].map(([id, data]) => ({ id, data: () => data })); s.cbs.forEach(cb => { try { cb({ docs }); } catch (e) { console.error(e); } }); }
   // "items" loads through a view that strips onHand/cost for the clerk role (a clerk still needs
   // names/SKUs to pick items in GRN/issue forms, so the row itself can't just be blocked outright).
-  // Note this only covers the initial load: a live update for an item still arrives unmasked over the
-  // realtime channel below, since postgres_changes broadcasts straight from the docs table - a known,
-  // accepted gap of this fix, not something this view can close on its own.
+  // A partner account loads every business collection through docs_for_partner instead - same app,
+  // same normal screens, every quantity/money value pre-scaled server-side, so the UI needs zero
+  // changes: it just renders whatever lands in S, same as any other role.
+  // Note this only covers the initial load: a live update still arrives over the realtime channel
+  // below straight from the docs table - RLS blocks that for partner entirely (can_read_col denies
+  // it), so a partner's screens simply don't update live and need a manual refresh/reload; for the
+  // clerk/items case the row itself IS still readable, so an item's own live update there would
+  // arrive unmasked - a known, accepted gap, not something this view can close on its own.
   async function loadCol(col) {
     const all = new Map();
-    const table = col === 'items' ? 'docs_items_masked' : 'docs';
+    const table = (isPartner && PARTNER_SCALED_COLS.has(col)) ? 'docs_for_partner'
+      : col === 'items' ? 'docs_items_masked' : 'docs';
     for (let from = 0; ; from += 1000) {
       const { data, error } = await sb.from(table).select('id,data').eq('col', col).range(from, from + 999);
       if (error) throw mapErr(error);
