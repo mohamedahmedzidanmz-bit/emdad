@@ -447,11 +447,19 @@ const ROLES={
   shipping:{t:'الشحن',see:['dash','inv','ship','sales','activity'],edit:['ship']},
   clerk:{t:'إدخال الاستلام والصرف',see:['dash','pos','grn','issue'],edit:['grn','issue']},
   accountant:{t:'محاسب مالي',see:['dash','suppliers','bills','payments'],edit:['bills','payments']},
+  partner:{t:'شريك',see:['partnerHome'],edit:[]},
   viewer:{t:'متابعة فقط',see:'*',edit:[]}
 };
-const ASSIGNABLE=['manager','purchasing','warehouse','quality','shipping','clerk','accountant','viewer'];
+const ASSIGNABLE=['manager','purchasing','warehouse','quality','shipping','clerk','accountant','partner','viewer'];
 function myRole(){if(mode!=='live')return'admin';if(me.owner||me.editor)return'admin';const r=me.id&&S.roles.find(x=>x.id===me.id);return r&&ROLES[r.role]&&r.role!=='admin'?r.role:null}
-function effRole(role){const base=ROLES[role];if(!base||role==='admin')return base;const ov=(cfg().rolePerms||{})[role];if(!ov)return base;return Object.assign({},base,{see:ov.see||base.see,edit:ov.edit||base.edit,approve:'approve'in ov?!!ov.approve:base.approve})}
+function effRole(role){
+  const base=ROLES[role];if(!base)return base;
+  const label=role==='partner'?(cfg().partnerRoleLabel||base.t):base.t;
+  if(role==='admin'||role==='partner')return Object.assign({},base,{t:label}); // partner's see/edit are fixed, never overridable via rolePerms, by design
+  const ov=(cfg().rolePerms||{})[role];
+  if(!ov)return Object.assign({},base,{t:label});
+  return Object.assign({},base,{t:label,see:ov.see||base.see,edit:ov.edit||base.edit,approve:'approve'in ov?!!ov.approve:base.approve});
+}
 const roleDef=()=>effRole(myRole())||{see:['dash'],edit:[]};
 function canSee(v){if(v==='users')return myRole()==='admin';const r=roleDef();return r.see==='*'||r.see.includes(v)}
 function canEditMod(m){if(!canWrite)return false;const role=myRole();if(m==='admin')return role==='admin';if(m==='approve')return!!roleDef().approve;const r=roleDef();return r.edit==='*'||r.edit.includes(m)}
@@ -656,7 +664,8 @@ const VIEWS={
   sales:{t:'مبيعات الفروع',r:renderSales,g:'المخازن'},
   reval:{t:'إعادة تقييم المخزون',r:renderReval,g:'المخازن'},
   bills:{t:'فواتير الموردين',r:renderBills,g:'الحسابات'},
-  payments:{t:'سداد الموردين',r:renderPayments,g:'الحسابات'}
+  payments:{t:'سداد الموردين',r:renderPayments,g:'الحسابات'},
+  partnerHome:{t:'لوحة الشريك',r:renderPartnerHome,g:''}
 };
 const VIEW_MOD={dash:'',reports:'',activity:'',users:'admin'};
 const viewMod=v=>v in VIEW_MOD?VIEW_MOD[v]:v;
@@ -679,10 +688,85 @@ const APPS=[
   {k:'ship',t:'الشحن',v:['ship'],c:'#C27A12',i:'ship'},
   {k:'reports',t:'التقارير',v:['reports','activity'],c:'#2F6FB0',i:'reports'},
   {k:'finance',t:'الحسابات المالية',v:['bills','payments'],c:'#8D5A2B',i:'money'},
-  {k:'users',t:'الإعدادات',v:['users'],c:'#55606B',i:'users'}
+  {k:'users',t:'الإعدادات',v:['users'],c:'#55606B',i:'users'},
+  {k:'partner',t:'لوحة الشريك',v:['partnerHome'],c:'#6B4F9E',i:'reports'}
 ];
-const MENU_T={dash:'نظرة عامة',rfqs:'طلبات عروض الأسعار',pos:'أوامر الشراء',suppliers:'الموردين',inv:'المنتجات',grn:'الاستلام',issue:'الصرف',rret:'مرتجعات لموردين',iret:'مرتجعات صرف',qa:'فحص الاستلام',ship:'الشحنات',reports:'تقارير الإدارة',activity:'سجل النشاط',users:'المستخدمين والصلاحيات',wh:'المخازن',dept:'الأقسام',count:'الجرد',sales:'مبيعات الفروع',reval:'إعادة التقييم',bills:'فواتير الموردين',payments:'سداد الموردين'};
+const MENU_T={dash:'نظرة عامة',rfqs:'طلبات عروض الأسعار',pos:'أوامر الشراء',suppliers:'الموردين',inv:'المنتجات',grn:'الاستلام',issue:'الصرف',rret:'مرتجعات لموردين',iret:'مرتجعات صرف',qa:'فحص الاستلام',ship:'الشحنات',reports:'تقارير الإدارة',activity:'سجل النشاط',users:'المستخدمين والصلاحيات',wh:'المخازن',dept:'الأقسام',count:'الجرد',sales:'مبيعات الفروع',reval:'إعادة التقييم',bills:'فواتير الموردين',payments:'سداد الموردين',partnerHome:'لوحة الشريك'};
 const appOf=v=>APPS.find(a=>a.v.includes(v))||APPS[0];
+
+/* ---------- partner role: fully isolated, read-only, scaled view of everything ----------
+   Loads from the Supabase view docs_for_partner (server-side scaled + attribution stripped),
+   never from S/COLS/realtime - deliberately separate from the rest of the app's data path. */
+let P={},partnerLoaded=false,partnerLoading=false;
+const PARTNER_COLS=['suppliers','rfqs','pos','grns','inspections','items','movements','issues','rreturns','ireturns','warehouses','depts','counts','sales','revals','bills','payments','shipments'];
+const pById=(col,id)=>(P[col]||[]).find(x=>x.id===id);
+const pItemName=id=>{const i=pById('items',id);return i?i.name:'صنف محذوف'};
+const pItemUnit=id=>{const i=pById('items',id);return i?i.unit||'':''};
+const pSupName=id=>{const s=pById('suppliers',id);return s?s.name:'مورد محذوف'};
+const pnum=n=>(Number(n)||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+const pmoney=n=>pnum(n)+' ج.م';
+async function loadPartnerData(){
+  if(partnerLoading||mode!=='live')return;
+  partnerLoading=true;schedule();
+  try{
+    for(const col of PARTNER_COLS){
+      const all=[];
+      for(let from=0;;from+=1000){
+        const{data,error}=await emdadSupabase.from('docs_for_partner').select('id,data').eq('col',col).range(from,from+999);
+        if(error)throw error;
+        all.push(...data);
+        if(data.length<1000)break;
+      }
+      P[col]=all.map(r=>Object.assign({id:r.id},r.data));
+    }
+    partnerLoaded=true;
+  }catch(e){toast('فشل تحميل البيانات: '+((e&&e.message)||''),'bad')}
+  finally{partnerLoading=false;schedule()}
+}
+const PARTNER_TABS=[['items','المخزون'],['purchase','الموردين والمشتريات'],['recv','الاستلام'],['issue','الصرف والمرتجعات'],['money','الفواتير والسداد'],['stock','الجرد وإعادة التقييم'],['ship','الشحن والمبيعات']];
+function renderPartnerHome(){
+  const label=effRole('partner').t;
+  if(!partnerLoaded){
+    if(!partnerLoading)loadPartnerData();
+    return head(label,'بنجهّز البيانات…')+`<div class="panel"><div class="empty"><b>لحظة واحدة</b>بنحمّل بيانات ${esc(label)}.</div></div>`;
+  }
+  const tab=ui.partnerTab||'items';
+  const body={items:partnerItemsTab,purchase:partnerPurchaseTab,recv:partnerRecvTab,issue:partnerIssueTab,money:partnerMoneyTab,stock:partnerStockTab,ship:partnerShipTab}[tab]();
+  return head(label,'عرض للاطلاع بس — كل الأرقام بنسبة من القيمة الحقيقية.',seg('partnerTab',PARTNER_TABS)+`<button class="btn sm" data-a="partnerRefresh">تحديث</button>`)+body;
+}
+function partnerItemsTab(){
+  const list=[...P.items].sort((a,b)=>(a.sku||'').localeCompare(b.sku||''));
+  return`<section class="panel">${tbl(['الكود','الصنف',['الرصيد','num'],['التكلفة','num'],['القيمة','num']],list.map(i=>`<tr><td>${code(i.sku||'')}</td><td>${esc(i.name)}</td><td class="num">${pnum(i.onHand)} ${esc(i.unit||'')}</td><td class="num">${pmoney(i.cost)}</td><td class="num">${pmoney((+i.onHand||0)*(+i.cost||0))}</td></tr>`),'مفيش أصناف.')}</section>`;
+}
+function partnerPurchaseTab(){
+  const sups=`<section class="panel"><h2>الموردين</h2>${tbl(['الاسم','الحالة'],[...P.suppliers].map(s=>`<tr><td>${esc(s.name)}</td><td>${chip(s.status==='blocked'?'موقوف':s.status==='trial'?'تحت التجربة':'معتمد',s.status==='blocked'?'bad':'ok')}</td></tr>`),'مفيش موردين.')}</section>`;
+  const pos=`<section class="panel"><h2>أوامر الشراء</h2>${tbl(['رقم الأمر','المورد',['القيمة','num'],'الحالة'],[...P.pos].sort((a,b)=>(b.ts||0)-(a.ts||0)).map(p=>{const st=poStatus(p),[l,t]=PO_ST[st]||PO_ST.draft;return`<tr><td>${code(p.no)}</td><td>${esc(pSupName(p.supplierId))}</td><td class="num">${pmoney(sum(p.lines||[],x=>x.qty*x.price))}</td><td>${chip(l,t)}</td></tr>`}),'مفيش أوامر شراء.')}</section>`;
+  return sups+pos;
+}
+function partnerRecvTab(){
+  return`<section class="panel">${tbl(['رقم الاستلام','التاريخ','المورد','الأصناف'],[...P.grns].sort((a,b)=>(b.ts||0)-(a.ts||0)).map(g=>`<tr><td>${code(g.no)}</td><td class="code">${g.date}</td><td>${esc(pSupName(g.supplierId))}</td><td>${(g.lines||[]).map(l=>`${esc(pItemName(l.itemId))} (${pnum(l.qty)})`).join('، ')}</td></tr>`),'مفيش عمليات استلام.')}</section>`;
+}
+function partnerIssueTab(){
+  const iss=`<section class="panel"><h2>أذون الصرف</h2>${tbl(['رقم الإذن','التاريخ','الجهة',['القيمة','num']],[...P.issues].sort((a,b)=>(b.ts||0)-(a.ts||0)).map(s=>`<tr><td>${code(s.no)}</td><td class="code">${s.date}</td><td>${esc(s.dept||'')}</td><td class="num">${pmoney(sum(s.lines||[],l=>l.qty*l.cost))}</td></tr>`),'مفيش أذون صرف.')}</section>`;
+  const ret=`<section class="panel"><h2>المرتجعات</h2>${tbl(['رقم المرتجع','النوع','التاريخ',['القيمة','num']],[...P.ireturns.map(r=>({...r,k:'صرف'})),...P.rreturns.map(r=>({...r,k:'موردين'}))].sort((a,b)=>(b.ts||0)-(a.ts||0)).map(r=>`<tr><td>${code(r.no)}</td><td>${esc(r.k)}</td><td class="code">${r.date}</td><td class="num">${pmoney(r.value??sum(r.lines||[],l=>l.qty*(l.cost||l.price||0)))}</td></tr>`),'مفيش مرتجعات.')}</section>`;
+  return iss+ret;
+}
+function partnerMoneyTab(){
+  const bills=`<section class="panel"><h2>فواتير الموردين</h2>${tbl(['رقم الفاتورة','المورد',['القيمة','num'],['المدفوع','num'],['المتبقي','num']],[...P.bills].sort((a,b)=>(b.ts||0)-(a.ts||0)).map(b=>`<tr><td>${code(b.no)}</td><td>${esc(pSupName(b.supplierId))}</td><td class="num">${pmoney(b.amount)}</td><td class="num">${pmoney(b.paid)}</td><td class="num">${pmoney(Math.max(0,(+b.amount||0)-(+b.paid||0)))}</td></tr>`),'مفيش فواتير.')}</section>`;
+  const pay=`<section class="panel"><h2>السداد</h2>${tbl(['رقم السداد','التاريخ','المورد',['القيمة','num'],'الطريقة'],[...P.payments].sort((a,b)=>(b.ts||0)-(a.ts||0)).map(p=>`<tr><td>${code(p.no)}</td><td class="code">${p.date}</td><td>${esc(pSupName(p.supplierId))}</td><td class="num">${pmoney(p.amount)}</td><td>${esc(p.method||'')}</td></tr>`),'مفيش سداد.')}</section>`;
+  return bills+pay;
+}
+function partnerStockTab(){
+  const counts=`<section class="panel"><h2>الجرد</h2>${tbl(['رقم الجرد','التاريخ','النطاق','الحالة'],[...P.counts].sort((a,b)=>(b.ts||0)-(a.ts||0)).map(c=>`<tr><td>${code(c.no)}</td><td class="code">${c.date}</td><td>${esc(c.scopeLabel||'')}</td><td>${chip(c.status==='posted'?'معتمد':c.status==='cancelled'?'ملغي':'مفتوح',c.status==='posted'?'ok':'mute')}</td></tr>`),'مفيش عمليات جرد.')}</section>`;
+  const revals=`<section class="panel"><h2>إعادة التقييم</h2>${tbl(['التاريخ','النطاق',['فرق القيمة','num']],[...P.revals].sort((a,b)=>(b.ts||0)-(a.ts||0)).map(r=>`<tr><td class="code">${r.date}</td><td>${esc(r.scopeLabel||'')}</td><td class="num">${(+r.totalDiff||0)>=0?'+':''}${pmoney(r.totalDiff)}</td></tr>`),'مفيش عمليات إعادة تقييم.')}</section>`;
+  return counts+revals;
+}
+function partnerShipTab(){
+  const ship=`<section class="panel"><h2>الشحنات</h2>${tbl(['رقم الشحنة','التاريخ','الحالة'],[...P.shipments].sort((a,b)=>(b.ts||0)-(a.ts||0)).map(s=>`<tr><td>${code(s.no)}</td><td class="code">${s.date||''}</td><td>${esc(s.status||'')}</td></tr>`),'مفيش شحنات.')}</section>`;
+  const sales=`<section class="panel"><h2>مبيعات الفروع</h2>${tbl(['الفرع','الشهر',['المبيعات','num']],[...P.sales].sort((a,b)=>String(b.month).localeCompare(String(a.month))).map(s=>`<tr><td>${esc(pById('depts',s.branch)?pById('depts',s.branch).name:s.branch)}</td><td class="code">${s.month}</td><td class="num">${pmoney(s.amount)}</td></tr>`),'مفيش مبيعات مسجّلة.')}</section>`;
+  return ship+sales;
+}
+
 function homeHtml(ready){
   if(ready&&mode==='live'&&!myRole())return gateHtml();
   const apps=APPS.filter(a=>!ready||a.v.some(canSee));
@@ -691,12 +775,13 @@ function homeHtml(ready){
 function render(){
   const ready0=mode==='local'||loaded.size===COLS.length;
   if(ready0&&!canSee(ui.view))ui.view='dash';
+  if(myRole()==='partner'){ui.view='partnerHome';ui.home=false} // isolated module: never falls through to the normal dash/apps-menu
   const vm=viewMod(ui.view);
   document.getElementById('app').classList.toggle('ro',ui.home?!canWrite:(vm?!canEditMod(vm):!canWrite));
   document.body.classList.toggle('no-print',!canEditMod('reports')); // printing (Ctrl+P) is for admin/manager only, same as Excel export
   const role=myRole();
   $('#setBtn').hidden=role!=='admin';
-  $('#meBox').innerHTML=mode==='live'?`${avatar(me.id)}<span class="me-t"><b>${whoH(me.id)}</b><span>${role?ROLES[role].t:'من غير صلاحية لسه'}</span></span>`:'';
+  $('#meBox').innerHTML=mode==='live'?`${avatar(me.id)}<span class="me-t"><b>${whoH(me.id)}</b><span>${role?effRole(role).t:'من غير صلاحية لسه'}</span></span>`:'';
   const app=ui.home?null:appOf(ui.view);
   $('#appName').textContent=app?app.t:'إمداد';
   $('#nav').innerHTML=app?app.v.filter(k=>!ready0||canSee(k)).map(k=>{const[n,hot]=navCount(k);return`<button data-a="nav" data-v="${k}" aria-current="${ui.view===k}">${MENU_T[k]||VIEWS[k].t}${n?`<span class="n${hot?' hot':''}">${n}</span>`:''}</button>`}).join('')+(app.k==='users'&&role==='admin'?`<button data-a="settings">الإعدادات العامة</button>`:''):'';
@@ -837,7 +922,7 @@ function deviceGateHtml(){
   ${d?chip('طلب الاعتماد اتبعت، مستني موافقة المدير','info'):'<p>بنسجّل طلب اعتماد للجهاز ده دلوقتي…</p>'}
   <p class="hint">لو ده جهازك المعتاد وكان شغال قبل كده، كلّم مدير النظام يتأكد إنه معتمد.</p></div>`;
 }
-const roleSel=(id,val)=>`<select class="search" style="width:auto" data-role-for="${esc(id)}" aria-label="الدور">${ASSIGNABLE.map(k=>`<option value="${k}"${k===val?' selected':''}>${ROLES[k].t}</option>`).join('')}</select>`;
+const roleSel=(id,val)=>`<select class="search" style="width:auto" data-role-for="${esc(id)}" aria-label="الدور">${ASSIGNABLE.map(k=>`<option value="${k}"${k===val?' selected':''}>${effRole(k).t}</option>`).join('')}</select>`;
 function renderUsers(){
   const reqs=S.requests.filter(r=>!S.roles.some(x=>x.id===r.id)).sort((a,b)=>(b.ts||0)-(a.ts||0));
   const lab=x=>x==='*'?'كل الشاشات':x.map(v=>VIEWS[v]?VIEWS[v].t:v).join('، ');
@@ -846,7 +931,7 @@ function renderUsers(){
   ${reqs.length?`<section class="panel"><h2>طلبات صلاحية <small>${reqs.length}</small></h2>${tbl(['الشخص','وقت الطلب','الدور',''],reqs.map(r=>`<tr><td>${whoH(r.id)}</td><td class="code">${fmtTs(r.ts)}</td><td>${roleSel(r.id,'viewer')}</td><td><span class="tags"><button class="btn sm pri" data-a="addRole" data-id="${esc(r.id)}">وافق</button><button class="btn sm danger" data-a="dismissReq" data-id="${esc(r.id)}">ارفض</button></span></td></tr>`),'')}</section>`:''}
   <section class="panel"><h2>أضف شخص من المؤسسة</h2><div class="pbody picker"><input class="search" id="userSearch" data-in="usearch" placeholder="اكتب اسم أو إيميل" style="width:100%" autocomplete="off"><div class="res" id="userRes" hidden></div></div></section>
   <section class="panel"><h2>الفريق <small>${S.roles.length} شخص</small></h2>${tbl(['الشخص','الدور','آخر تعديل',''],S.roles.map(r=>`<tr><td>${whoH(r.id)}</td><td>${roleSel(r.id,r.role)}</td><td><span class="code">${fmtTs(r.updatedAt)}</span><span class="sub">${whoH(r.updatedBy)}</span></td><td><button class="btn sm danger" data-a="delRole" data-id="${esc(r.id)}">شيل الصلاحية</button></td></tr>`),'لسه مفيش حد متعيّن. أي حد يفتح الصفحة من غير دور هيقدر يبعت طلب صلاحية يظهرلك هنا، أو دور عليه بالاسم فوق.')}</section>
-  <section class="panel"><h2>مين يقدر يعمل إيه</h2><div class="note"><span>دور الأدمن ثابت دايمًا (كل الصلاحيات)، والباقي تقدر تعدّل شاشاته بتشيك بوكس من زرار "تعديل".</span></div>${tbl(['الدور','بيشوف','بيسجّل في',''],['admin',...ASSIGNABLE].map(k=>{const r=effRole(k);const custom=k!=='admin'&&cfg().rolePerms&&cfg().rolePerms[k];return`<tr><td><b>${r.t}</b>${r.approve?'<span class="sub">بيعتمد أوامر الشراء</span>':''}${k==='admin'?'<span class="sub">الإيميلات اللي في جدول admins</span>':''}${custom?'<span class="sub">مخصص</span>':''}</td><td>${lab(r.see)}${k==='admin'?'، والمستخدمين والإعدادات':''}</td><td>${r.edit==='*'?'كل حاجة':r.edit.length?lab(r.edit):'مش بيسجّل'}</td><td>${k==='admin'?'':`<button class="btn sm" data-a="editRolePerms" data-id="${k}">تعديل</button>`}</td></tr>`}),'')}</section>
+  <section class="panel"><h2>مين يقدر يعمل إيه</h2><div class="note"><span>دور الأدمن ثابت دايمًا (كل الصلاحيات)، والباقي تقدر تعدّل شاشاته بتشيك بوكس من زرار "تعديل".</span></div>${tbl(['الدور','بيشوف','بيسجّل في',''],['admin',...ASSIGNABLE].map(k=>{const r=effRole(k);const custom=k!=='admin'&&k!=='partner'&&cfg().rolePerms&&cfg().rolePerms[k];return`<tr><td><b>${r.t}</b>${r.approve?'<span class="sub">بيعتمد أوامر الشراء</span>':''}${k==='admin'?'<span class="sub">الإيميلات اللي في جدول admins</span>':''}${k==='partner'?'<span class="sub">قراءة بس، بنسبة من الإعدادات العامة</span>':''}${custom?'<span class="sub">مخصص</span>':''}</td><td>${lab(r.see)}${k==='admin'?'، والمستخدمين والإعدادات':''}</td><td>${r.edit==='*'?'كل حاجة':r.edit.length?lab(r.edit):'مش بيسجّل'}</td><td>${k==='admin'||k==='partner'?'':`<button class="btn sm" data-a="editRolePerms" data-id="${k}">تعديل</button>`}</td></tr>`}),'')}</section>
   <section class="panel"><h2>منطقة الخطر</h2><div class="pbody" style="padding:14px"><div class="note${cfg().maintenance?' warn':''}"><span><b>${cfg().maintenance?'البرنامج معطّل دلوقتي':'تعطيل البرنامج مؤقتًا'}:</b> ${cfg().maintenance?'كل المستخدمين (غير المدير/الإدارة) شايفين شاشة "تحت الصيانة" دلوقتي بدل البرنامج. دوس الزرار عشان ترجّعه يشتغل لهم تاني.':'يقفل البرنامج مؤقتًا لأي حد غير المدير/الإدارة (بيشوفوا شاشة "تحت الصيانة") — مفيد وقت التفريغ/الاسترجاع عشان محدش يستخدم البرنامج ويعمل تعارض مع العملية.'}</span><button class="btn ${cfg().maintenance?'pri':'danger'} w" data-a="toggleMaintenance" style="margin-top:10px">${cfg().maintenance?'إلغاء التعطيل':'تعطيل البرنامج دلوقتي'}</button></div></div>
   <div class="pbody" style="padding:14px"><div class="note warn"><span><b>تفريغ البرنامج لعرض تجريبي (ديمو):</b> بيمسح كل بيانات العمل (موردين، أصناف، أوامر، فواتير... كل حاجة) ويرجّع البرنامج لوحة بيضاء تمامًا، بعد ما ينزّلك نسخة احتياطية كاملة أوتوماتيك الأول. الصلاحيات والأدوار بتفضل زي ما هي وملك المدير هيفضل يقدر يدخل. سجل النشاط الأمني (audit) مينفعش يتمسح خالص حتى من غير دي — ده مقصود، فهيفضل فيه تاريخ قديم ظاهر في شاشة «سجل النشاط» لو فتحتها وقت العرض.</span><button class="btn danger w" data-a="wipeDemo" style="margin-top:10px">تفريغ البرنامج دلوقتي</button></div>
   <div class="pbody" style="padding:14px"><div class="note"><span><b>استعادة من نسخة احتياطية:</b> ارفع ملف JSON (زي اللي بينزّل من زرار التفريغ فوق، أو من backup.ps1) وهيكتب فوق البيانات الحالية بقيم النسخة دي. أي حاجة اتسجلت بعد تاريخ النسخة بتفضل زي ما هي (الاستعادة بتحدّث مش بتمسح). محتاج تكون النسخة المنشورة على الإنترنت متصلة، مش وضع محلي.</span><label class="btn w" style="cursor:pointer;margin-top:10px">استعادة من نسخة<input type="file" id="restoreFile" accept=".json" style="display:none"></label></div></div></section>
@@ -883,7 +968,7 @@ async function userSearch(q){
   if(!userNS){box.hidden=false;box.innerHTML='<div><span>البحث بالاسم شغال في النسخة المنشورة بس.</span></div>';return}
   const seq=++searchSeq;const hits=await userNS.search(q.trim());if(seq!==searchSeq||!$('#userRes'))return;
   box.hidden=!hits.length&&!q.trim();
-  box.innerHTML=hits.length?hits.map(h=>{names[h.id]=h.name;const has=S.roles.find(r=>r.id===h.id);return`<div><span></span>${has?chip(ROLES[has.role]?ROLES[has.role].t:has.role,'ok'):`${roleSel(h.id,'viewer')}<button class="btn sm pri" data-a="addRole" data-id="${esc(h.id)}">أضف</button>`}</div>`}).join(''):'<div><span>مفيش نتايج</span></div>';
+  box.innerHTML=hits.length?hits.map(h=>{names[h.id]=h.name;const has=S.roles.find(r=>r.id===h.id);return`<div><span></span>${has?chip(effRole(has.role)?effRole(has.role).t:has.role,'ok'):`${roleSel(h.id,'viewer')}<button class="btn sm pri" data-a="addRole" data-id="${esc(h.id)}">أضف</button>`}</div>`}).join(''):'<div><span>مفيش نتايج</span></div>';
   [...box.querySelectorAll('div > span:first-child')].forEach((s,i)=>{if(hits[i])s.textContent=hits[i].name+(hits[i].guest?' (من برّه المؤسسة)':'')});
 }
 
@@ -1078,8 +1163,11 @@ function settingsForm(){
     ${sel('إخفاء أرصدة المخزون عن غير المدراء','blindStock',[['no','لأ، كله شايف الأرصدة'],['yes','أيوه، اخفيها (فعّلها وقت الجرد)']],c.blindStock?'yes':'no',{full:true})}
     <p class="f full"><small>لما تفعّلها، أي حد مش من دوره الاعتماد (غير المدير/الإدارة) مش هيشوف أرقام الأرصدة في شاشة المخزون. فورمة إدخال الجرد نفسها دايمًا مخفي فيها رصيد النظام والفرق عن غير المدراء، سواء الخاصية دي مفعّلة أو لأ.</small></p>
     ${fld('تسجيل الخروج التلقائي بعد (دقيقة)','idleMinutes',{value:c.idleMinutes||10,type:'number',full:true,attrs:'min="1" step="1"',hint:'لو حد سايب البرنامج فاتح من غير ما يستخدمه، البرنامج هيسجّل خروجه تلقائي بعد المدة دي ويطلب الإيميل والباسورد تاني. اكتب 0 لو مش عايز الخاصية دي.'})}
+    <h3 class="sec">دور الشركاء</h3>
+    ${fld('اسم الدور كما يظهر في البرنامج','partnerRoleLabel',{value:c.partnerRoleLabel||'شريك',full:true})}
+    ${fld('نسبة العرض للشركاء (%)','partnerPercent',{value:c.partnerPercent||25,type:'number',full:true,attrs:'min="0" max="100" step="any"',hint:'كل كمية وقيمة في البرنامج بتتضرب في النسبة دي لما يشوفها حد بدور الشركاء — مش بيأثر على أي رقم حقيقي في البرنامج.'})}
   </div>${formActions('احفظ')}</form>`,
-  async fd=>{const d=Object.fromEntries(fd);d.approvalLimit=Math.max(0,+d.approvalLimit||0);d.formUrl=String(d.formUrl||'').trim();if(d.formUrl===DEFAULT_FORM_URL||localUrl(d.formUrl))d.formUrl='';d.blindStock=d.blindStock==='yes';d.idleMinutes=Math.max(0,+d.idleMinutes||0);await put('settings','main',Object.assign({},strip(c),d));toast('اتحفظت الإعدادات')});
+  async fd=>{const d=Object.fromEntries(fd);d.approvalLimit=Math.max(0,+d.approvalLimit||0);d.formUrl=String(d.formUrl||'').trim();if(d.formUrl===DEFAULT_FORM_URL||localUrl(d.formUrl))d.formUrl='';d.blindStock=d.blindStock==='yes';d.idleMinutes=Math.max(0,+d.idleMinutes||0);d.partnerPercent=Math.max(0,Math.min(100,+d.partnerPercent||25));d.partnerRoleLabel=String(d.partnerRoleLabel||'').trim()||'شريك';await put('settings','main',Object.assign({},strip(c),d));toast('اتحفظت الإعدادات')});
 }
 
 /* ---------- POs ---------- */
@@ -2346,7 +2434,7 @@ const ACT={
   settings:()=>settingsForm(),paste:()=>pasteForm(),
   requestAccess:()=>run(async()=>{if(!me.id)return;try{await put('requests',me.id,{ts:Date.now()})}catch(e){toast('الطلب اترفض. جرّب تاني، أو كلّم مدير النظام.','bad');S.requests=S.requests.filter(r=>r.id!==me.id);schedule();return}toast('اتبعت طلب الصلاحية')}),
   approveDevice:d=>run(async()=>{await patch('devices',d.id,{approved:'yes',approvedBy:me.id||'',approvedAt:Date.now()});toast('اتعمد الجهاز')}),
-  addRole:d=>run(async()=>{const s=document.querySelector(`[data-role-for="${CSS.escape(d.id)}"]`);const role=s?s.value:'viewer';await put('roles',d.id,{role},'تعيين دور: '+ROLES[role].t);if(byId('requests',d.id))await remove('requests',d.id);const box=$('#userRes');if(box){box.hidden=true;box.innerHTML=''}const inp=$('#userSearch');if(inp)inp.value='';toast(`اتحدد الدور: ${ROLES[role].t}`)}),
+  addRole:d=>run(async()=>{const s=document.querySelector(`[data-role-for="${CSS.escape(d.id)}"]`);const role=s?s.value:'viewer';await put('roles',d.id,{role},'تعيين دور: '+effRole(role).t);if(byId('requests',d.id))await remove('requests',d.id);const box=$('#userRes');if(box){box.hidden=true;box.innerHTML=''}const inp=$('#userSearch');if(inp)inp.value='';toast(`اتحدد الدور: ${effRole(role).t}`)}),
   copyReport:()=>copyText(reportText()),
   openLedger:d=>itemLedger(d.id),
   addCount:()=>countForm(),openCount:d=>openCount(d.id),exportCountXlsx:(d,b)=>run(async()=>{b.disabled=true;try{await exportCountXlsx(d.id)}finally{b.disabled=false}}),
@@ -2417,7 +2505,7 @@ const ACT={
   dismissReq:d=>run(async()=>{await remove('requests',d.id);toast('اترفض الطلب')}),
   delRole:(d,b)=>arm(b,()=>run(async()=>{await remove('roles',d.id);toast('اتشالت الصلاحية')})),
   editRolePerms:d=>rolePermsForm(d.id),
-  resetRolePerms:(d,b)=>arm(b,()=>run(async()=>{const rp=Object.assign({},cfg().rolePerms||{});delete rp[d.id];await patch('settings','main',{rolePerms:rp},'إرجاع صلاحيات '+ROLES[d.id].t+' للافتراضي');closeDrawer();toast('رجعت صلاحيات '+ROLES[d.id].t+' للافتراضي')})),
+  resetRolePerms:(d,b)=>arm(b,()=>run(async()=>{const rp=Object.assign({},cfg().rolePerms||{});delete rp[d.id];await patch('settings','main',{rolePerms:rp},'إرجاع صلاحيات '+effRole(d.id).t+' للافتراضي');closeDrawer();toast('رجعت صلاحيات '+effRole(d.id).t+' للافتراضي')})),
   invite:d=>run(async()=>{const r=byId('rfqs',d.id);if(!r||!canWrite)return;const inv=Object.assign({},r.invited||{});inv[d.s]=today();await patch('rfqs',d.id,{invited:inv});if(!$('#drawer').hidden)openRfq(d.id)}),
   copyInvite:d=>{const r=byId('rfqs',d.id);if(!r)return;copyText(inviteMsg(r,d.s||''));if(d.s&&canWrite){const inv=Object.assign({},r.invited||{});inv[d.s]=today();run(()=>patch('rfqs',d.id,{invited:inv}))}},
   addPo:()=>poForm(),openPo:d=>openPo(d.id),editPo:d=>poForm(d.id),
@@ -2439,7 +2527,8 @@ const ACT={
   })),
   clearSample:(d,b)=>arm(b,()=>run(async()=>{let n=0;for(const c of COLS)for(const x of S[c].filter(x=>x.sample===true)){await remove(c,x.id);n++}toast(`اتمسح ${n} سجل مثال`)})),
   wipeDemo:()=>run(wipeDemo),
-  toggleMaintenance:()=>run(async()=>{const on=!cfg().maintenance;await patch('settings','main',{maintenance:on});toast(on?'اتعطل البرنامج لغير المدير/الإدارة':'اتلغى التعطيل، البرنامج شغال للكل تاني')})
+  toggleMaintenance:()=>run(async()=>{const on=!cfg().maintenance;await patch('settings','main',{maintenance:on});toast(on?'اتعطل البرنامج لغير المدير/الإدارة':'اتلغى التعطيل، البرنامج شغال للكل تاني')}),
+  partnerRefresh:()=>run(async()=>{partnerLoaded=false;await loadPartnerData();toast('اتحدثت البيانات')})
 };
 function arm(b,fn){if(b.dataset.armed){delete b.dataset.armed;fn();return}const t=b.textContent;b.dataset.armed='1';b.textContent='اضغط تاني للتأكيد';setTimeout(()=>{if(b.isConnected&&b.dataset.armed){delete b.dataset.armed;b.textContent=t}},3500)}
 // action -> module it belongs to; ':view' opens a record (read allowed if the module is visible)
@@ -2457,7 +2546,7 @@ document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(!b
 document.addEventListener('input',e=>{const k=e.target.dataset&&e.target.dataset.in;if(k==='q'){ui.q=e.target.value;schedule()}else if(k==='usearch')userSearch(e.target.value)});
 document.addEventListener('change',e=>{const t=e.target;if(t.tagName==='SELECT'&&t.dataset.k&&t.closest('#view')){ui[t.dataset.k]=t.value;render()}});
 document.addEventListener('focusin',e=>{if(e.target.id==='userSearch'&&!e.target.value)userSearch('')});
-document.addEventListener('change',e=>{const t=e.target;if(!t.dataset||!t.dataset.roleFor||!t.closest('#view'))return;const id=t.dataset.roleFor;if(!S.roles.some(r=>r.id===id))return;if(!canEditMod('admin')){toast('مش ضمن صلاحياتك','bad');return}run(async()=>{await patch('roles',id,{role:t.value},'تغيير الدور إلى '+ROLES[t.value].t);toast('اتغيّر الدور')})});
+document.addEventListener('change',e=>{const t=e.target;if(!t.dataset||!t.dataset.roleFor||!t.closest('#view'))return;const id=t.dataset.roleFor;if(!S.roles.some(r=>r.id===id))return;if(!canEditMod('admin')){toast('مش ضمن صلاحياتك','bad');return}run(async()=>{await patch('roles',id,{role:t.value},'تغيير الدور إلى '+effRole(t.value).t);toast('اتغيّر الدور')})});
 document.addEventListener('change',e=>{const t=e.target;if(t.name!=='li_item_q')return;const row=t.closest('.line');if(!row)return;const it=itemByLabel(t.value),hid=row.querySelector('[name=li_item]');if(hid)hid.value=it?it.id:'';if(t.closest('form.ship'))return;const pin=row.querySelector('[name=li_price]');if(pin&&it)pin.value=it.cost||'';const f=t.closest('form');const exp=f&&f.querySelector('[name=expiry]');if(exp&&!exp.value&&it&&+it.shelfLifeDays>0)exp.value=addDays(f.date&&f.date.value||today(),it.shelfLifeDays)},true);
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('#drawer').hidden)closeDrawer();else if((e.key==='Enter'||e.key===' ')&&e.target.matches&&e.target.matches('article[data-a],tr[data-a][tabindex]')){e.preventDefault();e.target.click()}});
 
