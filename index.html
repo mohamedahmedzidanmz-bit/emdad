@@ -1296,8 +1296,8 @@ function openIssue(id){
 
 /* ---------- issue returns ---------- */
 function renderIret(){
-  const list=S.ireturns.filter(r=>match(r.no,r.dept,r.issueNo,...(r.lines||[]).map(l=>itemName(l.itemId)))).sort((a,b)=>(b.ts||0)-(a.ts||0));
-  const rows=list.map(r=>`<tr class="click" data-a="openIret" data-id="${r.id}"><td>${code(r.no)}</td><td class="code">${r.date}</td><td>${r.issueNo?code(r.issueNo):'—'}</td><td>${esc(r.dept||'—')}</td><td>${linesSummary(r.lines)}</td><td>${IR_REASON[r.reason]||'—'}</td><td>${r.condition==='good'?chip('سليم: رجع المخزون','ok'):chip('تالف: خارج المخزون','bad')}</td><td class="num">${money(sum(r.lines||[],l=>l.qty*l.cost))}</td><td>${whoH(r.createdBy)}</td></tr>`);
+  const list=S.ireturns.filter(r=>match(r.no,r.dept,r.issueNo,r.paperNo,...(r.lines||[]).map(l=>itemName(l.itemId)))).sort((a,b)=>(b.ts||0)-(a.ts||0));
+  const rows=list.map(r=>`<tr class="click" data-a="openIret" data-id="${r.id}"><td>${code(r.no)}${r.paperNo?`<span class="sub code">سند ${esc(r.paperNo)}</span>`:''}</td><td class="code">${r.date}</td><td>${r.issueNo?code(r.issueNo):'—'}</td><td>${esc(r.dept||'—')}</td><td>${linesSummary(r.lines)}</td><td>${IR_REASON[r.reason]||'—'}</td><td>${r.condition==='good'?chip('سليم: رجع المخزون','ok'):chip('تالف: خارج المخزون','bad')}</td><td class="num">${money(sum(r.lines||[],l=>l.qty*l.cost))}</td><td>${whoH(r.createdBy)}</td></tr>`);
   return head('مرتجعات صرف','بضاعة راجعة من الإنتاج أو أي جهة للمخزن. السليم بيرجع الرصيد، والتالف بيتسجل من غير ما يدخل.',searchBox('رقم، جهة، إذن صرف، صنف')+`<button class="btn pri w" data-a="iretNew">مرتجع صرف جديد</button>`)+
   `<section class="panel">${tbl(['رقم المرتجع','التاريخ','إذن الصرف','الجهة','الأصناف','السبب','الحالة',['القيمة','num'],'بواسطة'],rows,S.ireturns.length?'مفيش نتايج للبحث ده.':'<b>مفيش مرتجعات صرف</b>لو الإنتاج رجّع خامات زيادة سجّلها من هنا أو من إذن الصرف نفسه.')}</section>`;
 }
@@ -1313,6 +1313,7 @@ function ireturnForm(issueId){
     ${fld('تاريخ المرتجع','date',{type:'date',value:today(),req:true})}
     ${sel('السبب','reason',Object.entries(IR_REASON),'surplus')}
     ${sel('حالة البضاعة','condition',[['good','سليمة: ترجع المخزون'],['damaged','تالفة: متدخلش المخزون']],'good')}
+    ${fld('رقم السند الورقي عندك (لو موجود)','paperNo',{attrs:'dir="ltr"',full:true})}
   </div>${deptList.length?'':`<datalist id="depts">${deptNames().map(d=>`<option value="${esc(d)}">`).join('')}</datalist>`}
   <h3 class="sec">الأصناف المرتجعة</h3><div id="irLines" style="display:flex;flex-direction:column;gap:8px"></div>
   <div class="fg">${area('ملاحظات','notes','')}</div>
@@ -1324,7 +1325,7 @@ function ireturnForm(issueId){
     else{lines=readLines(fd,true).map(l=>({itemId:l.itemId,qty:l.qty,cost:+(byId('items',l.itemId)||{}).cost||0}));if(!lines.length){toast(noLinesMsg(fd),'bad');return false}}
     const no=genNo('IRT');
     const dept=fd.get('dept').trim();
-    await put('ireturns',no,{no,date:fd.get('date'),issueId:sid||'',issueNo,dept,reason:fd.get('reason'),condition:cond,notes:fd.get('notes'),lines,ts:Date.now()});
+    await put('ireturns',no,{no,date:fd.get('date'),issueId:sid||'',issueNo,dept,paperNo:(fd.get('paperNo')||'').trim(),reason:fd.get('reason'),condition:cond,notes:fd.get('notes'),lines,ts:Date.now()});
     if(cond==='good')for(const[iid,q]of Object.entries(aggregate(lines)))await addMovement(iid,q,'ireturn',no,dept+(issueNo?' · '+issueNo:''));
     toast(cond==='good'?`اتسجل ${no} ورجع للمخزون`:`اتسجل ${no} كتالف`);
   },body=>{
@@ -1337,7 +1338,7 @@ function ireturnForm(issueId){
 }
 function openIret(id){
   const r=byId('ireturns',id);if(!r)return;
-  openDrawer(`مرتجع صرف ${r.no}`,`<div class="kv"><div><small>الجهة</small><b>${esc(r.dept||'—')}</b></div><div><small>التاريخ</small><b>${r.date}</b></div><div><small>إذن الصرف</small><b>${r.issueNo?code(r.issueNo):'—'}</b></div><div><small>السبب</small><b>${IR_REASON[r.reason]||'—'}</b></div><div><small>الحالة</small><b>${r.condition==='good'?chip('سليم: رجع المخزون','ok'):chip('تالف','bad')}</b></div></div>
+  openDrawer(`مرتجع صرف ${r.no}`,`<div class="kv"><div><small>الجهة</small><b>${esc(r.dept||'—')}</b></div><div><small>التاريخ</small><b>${r.date}</b></div><div><small>إذن الصرف</small><b>${r.issueNo?code(r.issueNo):'—'}</b></div><div><small>السبب</small><b>${IR_REASON[r.reason]||'—'}</b></div><div><small>الحالة</small><b>${r.condition==='good'?chip('سليم: رجع المخزون','ok'):chip('تالف','bad')}</b></div>${r.paperNo?`<div><small>رقم السند الورقي</small><b>${esc(r.paperNo)}</b></div>`:''}</div>
   <div class="panel">${tbl(['الصنف',['الكمية','num'],['تكلفة الوحدة','num'],['القيمة','num']],(r.lines||[]).map(l=>`<tr><td>${esc(itemName(l.itemId))}</td><td class="num">${num(l.qty,2)} ${esc(itemUnit(l.itemId))}</td><td class="num">${money(l.cost)}</td><td class="num">${money(l.qty*l.cost)}</td></tr>`),'—')}</div>
   ${r.notes?`<div class="note"><span>${esc(r.notes)}</span></div>`:''}
   ${histHtml(r)}
@@ -1347,8 +1348,8 @@ function openIret(id){
 /* ---------- receipt returns (to supplier) ---------- */
 function renderRret(){
   const pend=pendingRej();
-  const list=S.rreturns.filter(r=>match(r.no,supName(r.supplierId),r.creditNo,...(r.lines||[]).map(l=>itemName(l.itemId)))).sort((a,b)=>(b.ts||0)-(a.ts||0));
-  const rows=list.map(r=>{const[l,t]=RR_ST[r.status]||RR_ST.sent;return`<tr class="click" data-a="openRret" data-id="${r.id}"><td>${code(r.no)}</td><td class="code">${r.date}</td><td>${esc(supName(r.supplierId))}</td><td>${linesSummary(r.lines)}</td><td>${RR_REASON[r.reason]||'—'}</td><td class="num">${money(r.value)}</td><td>${chip(l,t)}${r.creditNo?`<span class="sub code">${esc(r.creditNo)}</span>`:''}</td><td>${whoH(r.createdBy)}</td></tr>`});
+  const list=S.rreturns.filter(r=>match(r.no,supName(r.supplierId),r.creditNo,r.paperNo,...(r.lines||[]).map(l=>itemName(l.itemId)))).sort((a,b)=>(b.ts||0)-(a.ts||0));
+  const rows=list.map(r=>{const[l,t]=RR_ST[r.status]||RR_ST.sent;return`<tr class="click" data-a="openRret" data-id="${r.id}"><td>${code(r.no)}${r.paperNo?`<span class="sub code">سند ${esc(r.paperNo)}</span>`:''}</td><td class="code">${r.date}</td><td>${esc(supName(r.supplierId))}</td><td>${linesSummary(r.lines)}</td><td>${RR_REASON[r.reason]||'—'}</td><td class="num">${money(r.value)}</td><td>${chip(l,t)}${r.creditNo?`<span class="sub code">${esc(r.creditNo)}</span>`:''}</td><td>${whoH(r.createdBy)}</td></tr>`});
   const open=S.rreturns.filter(r=>r.status!=='credited');
   return head('مرتجعات استلام','بضاعة راجعة للمورد: مرفوضات الفحص، أو عيوب ظهرت بعد ما دخلت المخزون.',searchBox('رقم، مورد، إشعار خصم، صنف')+`<button class="btn pri w" data-a="rretNew">مرتجع لمورد</button>`)+
   `<div class="kpis"><div class="kpi ${pend.length?'warn':''}"><small>مرفوضات لسه عندك</small><b>${pend.length}</b><span>${num(sum(pend,x=>x.rejected-(x.returned||0)),2)} وحدة في منطقة المرفوضات</span></div><div class="kpi ${open.length?'warn':''}"><small>منتظر إشعار خصم</small><b>${open.length}</b><span>${money(sum(open,r=>r.value))} مستحقة من الموردين</span></div><div class="kpi"><small>إجمالي المرتجعات</small><b>${money(sum(S.rreturns,r=>r.value))}</b><span>${S.rreturns.length} إذن مرتجع</span></div></div>
@@ -1362,6 +1363,7 @@ function rreturnForm(supId){
     ${sel('المورد','supplierId',[['','اختار مورد'],...S.suppliers.map(s=>[s.id,s.name])],def,{full:true,req:true})}
     ${fld('تاريخ المرتجع','date',{type:'date',value:today(),req:true})}
     ${sel('السبب','reason',Object.entries(RR_REASON),pendingRej(def).length?'quality':pendingPreQc(def).length?'mistake':'defect')}
+    ${fld('رقم السند الورقي عندك (لو موجود)','paperNo',{attrs:'dir="ltr"',full:true})}
   </div>
   <h3 class="sec">من مرفوضات الفحص</h3><div id="rrRej"></div>
   <h3 class="sec">استلام اتسجل غلط (لسه ما اتفحصش)</h3><p style="margin:0;color:var(--muted);font-size:13px">للوط لسه في انتظار فحص الجودة ومحتاج يتلغي (كود، كمية، أو صنف غلط). مفيش حاجة دخلت المخزون لسه، فمفيش خصم — بس بيتسجل كمرتجع بسببه عشان السجل يفضل كامل، واللوط بيتشال من قايمة انتظار الفحص.</p><div id="rrPre"></div>
@@ -1381,7 +1383,7 @@ function rreturnForm(supId){
     lines.push(...stock);if(!lines.length){toast('مفيش أصناف في المرتجع','bad');return false}
     const no=genNo('RRT');
     const grnId=fd.get('grnId'),grn=grnId?byId('grns',grnId):null;
-    await put('rreturns',no,{no,date:fd.get('date'),supplierId:sid,grnId:grnId||'',grnNo:grn?grn.no:'',reason:fd.get('reason'),notes:fd.get('notes'),lines,value:Math.round(sum(lines,l=>l.qty*l.price)*100)/100,status:'sent',ts:Date.now()});
+    await put('rreturns',no,{no,date:fd.get('date'),supplierId:sid,grnId:grnId||'',grnNo:grn?grn.no:'',paperNo:(fd.get('paperNo')||'').trim(),reason:fd.get('reason'),notes:fd.get('notes'),lines,value:Math.round(sum(lines,l=>l.qty*l.price)*100)/100,status:'sent',ts:Date.now()});
     for(const[iid,r]of insUpd)await patch('inspections',iid,{returned:r},'إرجاع المرفوض بإذن '+no);
     for(const iid of insCancel)await patch('inspections',iid,{status:'cancelled'},'إلغاء استلام غلط بمرتجع '+no);
     for(const[iid,q]of Object.entries(aggregate(stock)))await addMovement(iid,-q,'rreturn',no,supName(sid));
@@ -1417,7 +1419,7 @@ function rreturnForm(supId){
 }
 function openRret(id){
   const r=byId('rreturns',id);if(!r)return;const[l,t]=RR_ST[r.status]||RR_ST.sent;
-  openDrawer(`مرتجع ${r.no}`,statusbar([['sent','اتبعت للمورد'],['credited','إشعار خصم']],r.status==='credited'?'credited':'sent')+`<div class="kv"><div><small>المورد</small><b>${esc(supName(r.supplierId))}</b></div><div><small>التاريخ</small><b>${r.date}</b></div><div><small>السبب</small><b>${RR_REASON[r.reason]||'—'}</b></div><div><small>القيمة</small><b>${money(r.value)}</b></div><div><small>الحالة</small><b>${chip(l,t)}</b></div>${r.creditNo?`<div><small>إشعار الخصم</small><b>${code(r.creditNo)}</b></div>`:''}${r.grnNo?`<div><small>إذن الاستلام</small><b>${code(r.grnNo)}</b></div>`:''}</div>
+  openDrawer(`مرتجع ${r.no}`,statusbar([['sent','اتبعت للمورد'],['credited','إشعار خصم']],r.status==='credited'?'credited':'sent')+`<div class="kv"><div><small>المورد</small><b>${esc(supName(r.supplierId))}</b></div><div><small>التاريخ</small><b>${r.date}</b></div><div><small>السبب</small><b>${RR_REASON[r.reason]||'—'}</b></div><div><small>القيمة</small><b>${money(r.value)}</b></div><div><small>الحالة</small><b>${chip(l,t)}</b></div>${r.creditNo?`<div><small>إشعار الخصم</small><b>${code(r.creditNo)}</b></div>`:''}${r.grnNo?`<div><small>إذن الاستلام</small><b>${code(r.grnNo)}</b></div>`:''}${r.paperNo?`<div><small>رقم السند الورقي</small><b>${esc(r.paperNo)}</b></div>`:''}</div>
   <div class="panel">${tbl(['الصنف','المصدر',['الكمية','num'],['قيمة الوحدة','num'],['القيمة','num']],(r.lines||[]).map(x=>`<tr><td>${esc(itemName(x.itemId))}${x.lot?`<span class="sub code">${esc(x.lot)}</span>`:''}</td><td>${x.src==='rejected'?chip('مرفوض في الفحص','warn'):x.src==='pending'?chip('استلام غلط، ملغي قبل الفحص','mute'):chip('من المخزون','info')}</td><td class="num">${num(x.qty,2)} ${esc(itemUnit(x.itemId))}</td><td class="num">${money(x.price)}</td><td class="num">${money(x.qty*x.price)}</td></tr>`),'—')}</div>
   ${r.notes?`<div class="note"><span>${esc(r.notes)}</span></div>`:''}
   ${histHtml(r)}
