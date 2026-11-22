@@ -1108,6 +1108,10 @@ function wireWhFilter(body,whSel){if(!whSel)return;whSel.addEventListener('chang
 function lineRow(l={},o={}){const it=l.itemId?byId('items',l.itemId):null;return`<div class="line${o.np?' np':''}"><span class="li-item"><input name="li_item_q" type="text" list="items-dl" placeholder="دور بالاسم أو الكود" aria-label="الصنف" value="${esc(itemLabel(it))}" autocomplete="off" required><input type="hidden" name="li_item" value="${esc(l.itemId||'')}"></span><input name="li_qty" type="text" inputmode="decimal" data-calc="1" placeholder="الكمية" aria-label="الكمية" value="${l.qty??''}" required>${o.np?'':`<input name="li_price" type="text" inputmode="decimal" data-calc="1" placeholder="سعر الوحدة" aria-label="سعر الوحدة" value="${l.price??''}" required>`}<button type="button" class="icon" data-a="rmLine" aria-label="احذف السطر">×</button></div>`}
 function linesBlock(lines,o={}){const L=lines&&lines.length?lines:(o.empty?[]:[{}]);return`<div class="lh${o.np?' np':''}"><span>الصنف</span><span>الكمية</span>${o.np?'':`<span>${o.priceLbl||'سعر الوحدة'}</span>`}<span></span></div><div class="lines" id="lines" data-np="${o.np?1:''}">${L.map(l=>lineRow(l,o)).join('')}</div><div><button type="button" class="btn sm" data-a="addLine">+ ${o.addLbl||'سطر'}</button></div>${itemsDatalist(o.whId)}`}
 function readLines(fd,np){const it=fd.getAll('li_item'),q=fd.getAll('li_qty'),p=fd.getAll('li_price');return it.map((x,i)=>({itemId:x,qty:+q[i]||0,price:np?0:(+p[i]||0)})).filter(l=>l.itemId&&l.qty>0)}
+// a specific "اكتب كمية أكبر من صفر" beats the generic "ضيف صنف واحد" when the person DID pick items -
+// just with a zero/negative/blank quantity (e.g. typed a minus sign by habit) - the generic message reads as
+// "you didn't add anything" even though the rows are right there, which is exactly what confused a real user
+function noLinesMsg(fd){return fd.getAll('li_item').some(Boolean)?'لازم الكمية تكون رقم أكبر من صفر لكل صنف مُدخَل':'ضيف صنف واحد على الأقل'}
 function aggregate(lines){const m={};lines.forEach(l=>m[l.itemId]=(m[l.itemId]||0)+l.qty);return m}
 function stockShort(need){const hb=hideBalance();return Object.entries(need).filter(([id,q])=>(+(byId('items',id)||{}).onHand||0)<q-1e-9).map(([id,q])=>hb?`${itemName(id)} (الكمية مش متاحة)`:`${itemName(id)} (محتاج ${num(q,2)}، متاح ${num((byId('items',id)||{}).onHand,2)})`)}
 const linesSummary=L=>(L||[]).length?`${esc(itemName(L[0].itemId))}${L.length>1?`<span class="sub">+ ${L.length-1} صنف تاني</span>`:''}`:'—';
@@ -1210,7 +1214,7 @@ function grnForm(poId){
       await patch('pos',pid,{lines:pl,receipts:rc},'استلام بإذن '+no);
     }else{
       supplierId=fd.get('supplierId');if(!supplierId){toast('اختار المورد','bad');return false}
-      lines=readLines(fd);if(!lines.length){toast('ضيف صنف واحد على الأقل','bad');return false}
+      lines=readLines(fd);if(!lines.length){toast(noLinesMsg(fd),'bad');return false}
     }
     await put('grns',no,{no,date,poId:pid||'',poNo,supplierId,dn:fd.get('dn'),lot,expiry,by:fd.get('by'),notes:fd.get('notes'),lines,ts:Date.now()});
     for(const l of lines){const ino=genNo('INS');await put('inspections',ino,{no:ino,poId:pid||'',poNo,grn:no,supplierId,itemId:l.itemId,qty:l.qty,price:l.price,lot,expiry,date,status:'pending',ts:Date.now()})}
@@ -1267,7 +1271,7 @@ function issueForm(itemId,kind){
   <div class="fg">${area('ملاحظات','notes','')}</div>
   ${formActions(isBranch?'سلّم للفرع واخصم من المخزون':'اصرف واخصم من المخزون')}</form>`,
   async fd=>{
-    const lines=readLines(fd,true);if(!lines.length){toast('ضيف صنف واحد على الأقل','bad');return false}
+    const lines=readLines(fd,true);if(!lines.length){toast(noLinesMsg(fd),'bad');return false}
     const need=aggregate(lines),short=stockShort(need);if(short.length){toast('الرصيد مش كفاية: '+short.join('، '),'bad');return false}
     const no=genNo('ISS'),dept=fd.get('dept').trim(),wo=(fd.get('wo')||'').trim();
     const deptRec=S.depts.find(x=>x.name===dept&&x.active!=='no');
@@ -1317,7 +1321,7 @@ function ireturnForm(issueId){
     const sid=fd.get('issueId'),cond=fd.get('condition');let lines=[],issueNo='';
     if(sid){const s=byId('issues',sid);issueNo=s.no;const L=clone(s.lines||[]);L.forEach((l,i)=>{const q=Math.min(Math.max(0,l.qty-(l.returned||0)),+fd.get('ir_'+i)||0);if(q<=0)return;l.returned=(l.returned||0)+q;lines.push({itemId:l.itemId,qty:q,cost:l.cost})});
       if(!lines.length){toast('اكتب كمية مرتجعة لصنف واحد على الأقل','bad');return false}await patch('issues',sid,{lines:L},'مرتجع صرف')}
-    else{lines=readLines(fd,true).map(l=>({itemId:l.itemId,qty:l.qty,cost:+(byId('items',l.itemId)||{}).cost||0}));if(!lines.length){toast('ضيف صنف واحد على الأقل','bad');return false}}
+    else{lines=readLines(fd,true).map(l=>({itemId:l.itemId,qty:l.qty,cost:+(byId('items',l.itemId)||{}).cost||0}));if(!lines.length){toast(noLinesMsg(fd),'bad');return false}}
     const no=genNo('IRT');
     const dept=fd.get('dept').trim();
     await put('ireturns',no,{no,date:fd.get('date'),issueId:sid||'',issueNo,dept,reason:fd.get('reason'),condition:cond,notes:fd.get('notes'),lines,ts:Date.now()});
@@ -1362,8 +1366,9 @@ function rreturnForm(supId){
   <h3 class="sec">من مرفوضات الفحص</h3><div id="rrRej"></div>
   <h3 class="sec">استلام اتسجل غلط (لسه ما اتفحصش)</h3><p style="margin:0;color:var(--muted);font-size:13px">للوط لسه في انتظار فحص الجودة ومحتاج يتلغي (كود، كمية، أو صنف غلط). مفيش حاجة دخلت المخزون لسه، فمفيش خصم — بس بيتسجل كمرتجع بسببه عشان السجل يفضل كامل، واللوط بيتشال من قايمة انتظار الفحص.</p><div id="rrPre"></div>
   <h3 class="sec">من المخزون</h3><p style="margin:0;color:var(--muted);font-size:13px">لعيوب ظهرت بعد ما البضاعة دخلت المخزون. الكمية دي بتتخصم من الرصيد.</p>
-  <div class="fg">${sel('المخزن','whId',whOpts(),'',{full:true})}</div>
-  ${linesBlock([],{empty:true,priceLbl:'قيمة الوحدة',addLbl:'صنف من المخزون'})}
+  <div class="fg"><div class="f full" id="rrGrnWrap">${sel('ربطه بإذن استلام معين (اختياري)','grnId',[['','من غير ربط بإذن استلام معين']],'',{full:true})}</div>${sel('المخزن','whId',whOpts(),'',{full:true})}</div>
+  <div id="stockLines"></div>
+  <div id="rrStockTotals" class="note" style="margin-top:8px;display:none"></div>
   <div class="fg">${area('ملاحظات / طريقة الإرجاع','notes','')}</div>
   ${formActions('سجّل المرتجع')}</form>`,
   async fd=>{
@@ -1375,26 +1380,48 @@ function rreturnForm(supId){
     const short=stockShort(aggregate(stock));if(short.length){toast('الرصيد مش كفاية: '+short.join('، '),'bad');return false}
     lines.push(...stock);if(!lines.length){toast('مفيش أصناف في المرتجع','bad');return false}
     const no=genNo('RRT');
-    await put('rreturns',no,{no,date:fd.get('date'),supplierId:sid,reason:fd.get('reason'),notes:fd.get('notes'),lines,value:Math.round(sum(lines,l=>l.qty*l.price)*100)/100,status:'sent',ts:Date.now()});
+    const grnId=fd.get('grnId'),grn=grnId?byId('grns',grnId):null;
+    await put('rreturns',no,{no,date:fd.get('date'),supplierId:sid,grnId:grnId||'',grnNo:grn?grn.no:'',reason:fd.get('reason'),notes:fd.get('notes'),lines,value:Math.round(sum(lines,l=>l.qty*l.price)*100)/100,status:'sent',ts:Date.now()});
     for(const[iid,r]of insUpd)await patch('inspections',iid,{returned:r},'إرجاع المرفوض بإذن '+no);
     for(const iid of insCancel)await patch('inspections',iid,{status:'cancelled'},'إلغاء استلام غلط بمرتجع '+no);
     for(const[iid,q]of Object.entries(aggregate(stock)))await addMovement(iid,-q,'rreturn',no,supName(sid));
     toast(`اتسجل المرتجع ${no} بقيمة ${money(sum(lines,l=>l.qty*l.price))}`);
   },body=>{
-    const f=body.querySelector('form'),wrap=body.querySelector('#rrRej'),wrapPre=body.querySelector('#rrPre');body.querySelector('#lines').dataset.optional='1';
+    const f=body.querySelector('form'),wrap=body.querySelector('#rrRej'),wrapPre=body.querySelector('#rrPre'),grnWrap=body.querySelector('#rrGrnWrap'),stockWrap=body.querySelector('#stockLines'),totalsWrap=body.querySelector('#rrStockTotals');
+    const drawTotals=()=>{
+      const its=[...stockWrap.querySelectorAll('[name=li_item]')],qs=[...stockWrap.querySelectorAll('[name=li_qty]')],ps=[...stockWrap.querySelectorAll('[name=li_price]')];
+      const rows=its.map((inp,i)=>({itemId:inp.value,qty:toNum(qs[i]&&qs[i].value)||0,price:toNum(ps[i]&&ps[i].value)||0})).filter(l=>l.itemId);
+      if(!rows.length){totalsWrap.hidden=true;return}
+      totalsWrap.hidden=false;
+      totalsWrap.innerHTML='<span>'+rows.map(l=>`${esc(itemName(l.itemId))}: ${num(l.qty,2)} × ${money(l.price)} = <b>${money(l.qty*l.price)}</b>`).join('<br>')+`<br>الإجمالي: <b>${money(sum(rows,l=>l.qty*l.price))}</b></span>`;
+    };
+    const drawStock=()=>{
+      const gid=f.grnId.value,whId=f.whId.value;
+      const g=gid?byId('grns',gid):null;
+      const prefill=g?(g.lines||[]).map(l=>({itemId:l.itemId,qty:'',price:l.price})):[];
+      stockWrap.innerHTML=linesBlock(prefill,{empty:!g,priceLbl:'قيمة الوحدة',addLbl:'صنف من المخزون',whId});
+      stockWrap.querySelector('#lines').dataset.optional='1';
+      drawTotals();
+    };
     const draw=()=>{const sid=f.supplierId.value;const P=pendingRej(sid);wrap.innerHTML=P.length?`<div class="lh rcv"><span>الصنف واللوط</span><span>لسه مارجعش</span><span>هيرجع دلوقتي</span></div><div class="lines" style="margin-top:8px">${P.map(x=>{const rem=x.rejected-(x.returned||0);return`<div class="line rcv"><span>${esc(itemName(x.itemId))}<span class="sub">${esc(x.lot)}${x.ncr?' · '+esc(x.ncr):''}</span></span><span class="code">${num(rem,2)}</span><input name="rj_${x.id}" type="text" inputmode="decimal" data-calc="1" value="${rem}" aria-label="الكمية المرتجعة"></div>`}).join('')}</div>`:`<p style="margin:0;color:var(--muted);font-size:13px">${sid?'مفيش مرفوضات معلقة عند المورد ده.':'اختار المورد الأول.'}</p>`;
       const Q=pendingPreQc(sid);wrapPre.innerHTML=Q.length?`<div class="lines" style="margin-top:8px">${Q.map(x=>`<label class="line rcv" style="align-items:center"><input type="checkbox" name="pq_${x.id}" value="1"><span>${esc(itemName(x.itemId))}<span class="sub">${esc(x.lot)} · ${esc(x.grn||x.poNo||'')}</span></span><span class="code">${num(x.qty,2)} ${esc(itemUnit(x.itemId))}</span></label>`).join('')}</div>`:`<p style="margin:0;color:var(--muted);font-size:13px">${sid?'مفيش استلام منتظر فحص عند المورد ده.':'اختار المورد الأول.'}</p>`;
+      const grns=S.grns.filter(x=>x.supplierId===sid).sort((a,b)=>(b.ts||0)-(a.ts||0));
+      grnWrap.innerHTML=sel('ربطه بإذن استلام معين (اختياري)','grnId',[['','من غير ربط بإذن استلام معين'],...grns.map(x=>[x.id,`${x.no} · ${x.date}`])],'',{full:true});
+      f.grnId.addEventListener('change',drawStock);
+      drawStock();
     };
     f.supplierId.addEventListener('change',draw);draw();
+    stockWrap.addEventListener('input',drawTotals);
     wireWhFilter(body,f.whId);
   });
 }
 function openRret(id){
   const r=byId('rreturns',id);if(!r)return;const[l,t]=RR_ST[r.status]||RR_ST.sent;
-  openDrawer(`مرتجع ${r.no}`,statusbar([['sent','اتبعت للمورد'],['credited','إشعار خصم']],r.status==='credited'?'credited':'sent')+`<div class="kv"><div><small>المورد</small><b>${esc(supName(r.supplierId))}</b></div><div><small>التاريخ</small><b>${r.date}</b></div><div><small>السبب</small><b>${RR_REASON[r.reason]||'—'}</b></div><div><small>القيمة</small><b>${money(r.value)}</b></div><div><small>الحالة</small><b>${chip(l,t)}</b></div>${r.creditNo?`<div><small>إشعار الخصم</small><b>${code(r.creditNo)}</b></div>`:''}</div>
+  openDrawer(`مرتجع ${r.no}`,statusbar([['sent','اتبعت للمورد'],['credited','إشعار خصم']],r.status==='credited'?'credited':'sent')+`<div class="kv"><div><small>المورد</small><b>${esc(supName(r.supplierId))}</b></div><div><small>التاريخ</small><b>${r.date}</b></div><div><small>السبب</small><b>${RR_REASON[r.reason]||'—'}</b></div><div><small>القيمة</small><b>${money(r.value)}</b></div><div><small>الحالة</small><b>${chip(l,t)}</b></div>${r.creditNo?`<div><small>إشعار الخصم</small><b>${code(r.creditNo)}</b></div>`:''}${r.grnNo?`<div><small>إذن الاستلام</small><b>${code(r.grnNo)}</b></div>`:''}</div>
   <div class="panel">${tbl(['الصنف','المصدر',['الكمية','num'],['قيمة الوحدة','num'],['القيمة','num']],(r.lines||[]).map(x=>`<tr><td>${esc(itemName(x.itemId))}${x.lot?`<span class="sub code">${esc(x.lot)}</span>`:''}</td><td>${x.src==='rejected'?chip('مرفوض في الفحص','warn'):x.src==='pending'?chip('استلام غلط، ملغي قبل الفحص','mute'):chip('من المخزون','info')}</td><td class="num">${num(x.qty,2)} ${esc(itemUnit(x.itemId))}</td><td class="num">${money(x.price)}</td><td class="num">${money(x.qty*x.price)}</td></tr>`),'—')}</div>
   ${r.notes?`<div class="note"><span>${esc(r.notes)}</span></div>`:''}
   ${histHtml(r)}
+  ${r.grnId?`<div class="actions"><span></span><button class="btn" data-a="openGrn" data-id="${r.grnId}">افتح إذن الاستلام</button></div>`:''}
   ${r.status!=='credited'?`<h3 class="sec w">سجّل إشعار الخصم من المورد</h3><form id="creditForm" class="w"><div class="fg">${fld('رقم إشعار الخصم','creditNo',{req:true,attrs:'dir="ltr"'})}${fld('التاريخ','creditDate',{type:'date',value:today()})}</div><div class="actions"><span></span><button class="btn pri" type="submit">اعتمد الإشعار</button></div></form>`:''}`,
   null,body=>{const f=body.querySelector('#creditForm');if(f)bindForm(f,async fd=>{await patch('rreturns',id,{status:'credited',creditNo:fd.get('creditNo'),creditDate:fd.get('creditDate')},'إشعار خصم '+fd.get('creditNo'));toast('اتسجل إشعار الخصم');openRret(id)})});
 }
@@ -2122,7 +2149,7 @@ function shipForm(id){
   <div><button type="button" class="btn sm" data-a="addLine">+ سطر</button></div>${itemsDatalist()}
   <div class="fg">${area('ملاحظات','notes',s.notes)}</div>
   ${formActions(id?'احفظ':'سجّل الشحنة',id?`<button type="button" class="btn danger w" data-a="del" data-col="shipments" data-id="${id}">احذف</button>`:'')}</form>`,
-  async fd=>{const items=fd.getAll('li_item'),q=fd.getAll('li_qty'),pr=fd.getAll('li_price');const lines=items.map((it,i)=>({itemId:it,qty:+q[i],price:+pr[i]||0})).filter(l=>l.itemId&&l.qty>0);if(!lines.length){toast('ضيف صنف واحد على الأقل','bad');return false}
+  async fd=>{const items=fd.getAll('li_item'),q=fd.getAll('li_qty'),pr=fd.getAll('li_price');const lines=items.map((it,i)=>({itemId:it,qty:+q[i],price:+pr[i]||0})).filter(l=>l.itemId&&l.qty>0);if(!lines.length){toast(noLinesMsg(fd),'bad');return false}
     const nid=id||genNo('SHP');await put('shipments',nid,Object.assign({},id?strip(s):{no:nid,status:'prep',ts:Date.now()},{customer:fd.get('customer'),city:fd.get('city'),planned:fd.get('planned'),carrier:fd.get('carrier'),tracking:fd.get('tracking'),notes:fd.get('notes'),lines}));toast(id?'اتحفظت الشحنة':'اتسجلت الشحنة')},
   body=>{body.querySelectorAll('[name=li_price]').forEach(x=>x.required=false)});
 }
