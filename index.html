@@ -834,7 +834,7 @@ let deviceRegistering=false;
 async function registerDeviceIfNeeded(){
   if(deviceRegistering||DEVICE_EXEMPT.includes(myRole())||byId('devices',deviceId()))return;
   deviceRegistering=true;
-  try{await put('devices',deviceId(),{approved:'no',ua:(navigator.userAgent||'').slice(0,160),requestedBy:me.id||'',requestedAt:Date.now()})}catch(e){}
+  try{await put('devices',deviceId(),{approved:'no',ua:(navigator.userAgent||'').slice(0,160),requestedBy:me.id||'',requestedAt:Date.now()})}catch(e){console.error('device registration failed',e)}
   deviceRegistering=false;
 }
 function maintenanceHtml(){
@@ -1098,9 +1098,15 @@ function settingsForm(){
 function itemLabel(i){return i?`${i.sku?i.sku+' · ':''}${i.name}`:''}
 function itemOpts(){return[['','اختار صنف'],...[...S.items].sort((a,b)=>(a.sku||'').localeCompare(b.sku||'')).map(i=>[i.id,itemLabel(i)])]}
 function itemByLabel(s){s=(s||'').trim();if(!s)return null;return S.items.find(i=>itemLabel(i)===s)||null}
-function itemsDatalist(){return`<datalist id="items-dl">${[...S.items].sort((a,b)=>(a.sku||'').localeCompare(b.sku||'')).map(i=>`<option value="${esc(itemLabel(i))}">`).join('')}</datalist>`}
+// whId lets the receipt/issue/return forms scope the item picker to one warehouse, so typing in a
+// factory with hundreds of items doesn't surface items that physically aren't there
+function itemsDatalist(whId){return`<datalist id="items-dl">${[...S.items].filter(i=>!whId||i.location===whId).sort((a,b)=>(a.sku||'').localeCompare(b.sku||'')).map(i=>`<option value="${esc(itemLabel(i))}">`).join('')}</datalist>`}
+const whOpts=()=>[['','كل المخازن'],...[...S.warehouses].filter(w=>w.active!=='no').sort((a,b)=>(a.name||'').localeCompare(b.name||'')).map(w=>[w.id,w.name])];
+// swaps the item datalist in place when a form's "المخزن" selector changes, without touching any lines
+// already typed in (re-rendering the whole lines block would wipe them)
+function wireWhFilter(body,whSel){if(!whSel)return;whSel.addEventListener('change',()=>{const dl=body.querySelector('#items-dl');if(dl)dl.outerHTML=itemsDatalist(whSel.value)})}
 function lineRow(l={},o={}){const it=l.itemId?byId('items',l.itemId):null;return`<div class="line${o.np?' np':''}"><span class="li-item"><input name="li_item_q" type="text" list="items-dl" placeholder="دور بالاسم أو الكود" aria-label="الصنف" value="${esc(itemLabel(it))}" autocomplete="off" required><input type="hidden" name="li_item" value="${esc(l.itemId||'')}"></span><input name="li_qty" type="text" inputmode="decimal" data-calc="1" placeholder="الكمية" aria-label="الكمية" value="${l.qty??''}" required>${o.np?'':`<input name="li_price" type="text" inputmode="decimal" data-calc="1" placeholder="سعر الوحدة" aria-label="سعر الوحدة" value="${l.price??''}" required>`}<button type="button" class="icon" data-a="rmLine" aria-label="احذف السطر">×</button></div>`}
-function linesBlock(lines,o={}){const L=lines&&lines.length?lines:(o.empty?[]:[{}]);return`<div class="lh${o.np?' np':''}"><span>الصنف</span><span>الكمية</span>${o.np?'':`<span>${o.priceLbl||'سعر الوحدة'}</span>`}<span></span></div><div class="lines" id="lines" data-np="${o.np?1:''}">${L.map(l=>lineRow(l,o)).join('')}</div><div><button type="button" class="btn sm" data-a="addLine">+ ${o.addLbl||'سطر'}</button></div>${itemsDatalist()}`}
+function linesBlock(lines,o={}){const L=lines&&lines.length?lines:(o.empty?[]:[{}]);return`<div class="lh${o.np?' np':''}"><span>الصنف</span><span>الكمية</span>${o.np?'':`<span>${o.priceLbl||'سعر الوحدة'}</span>`}<span></span></div><div class="lines" id="lines" data-np="${o.np?1:''}">${L.map(l=>lineRow(l,o)).join('')}</div><div><button type="button" class="btn sm" data-a="addLine">+ ${o.addLbl||'سطر'}</button></div>${itemsDatalist(o.whId)}`}
 function readLines(fd,np){const it=fd.getAll('li_item'),q=fd.getAll('li_qty'),p=fd.getAll('li_price');return it.map((x,i)=>({itemId:x,qty:+q[i]||0,price:np?0:(+p[i]||0)})).filter(l=>l.itemId&&l.qty>0)}
 function aggregate(lines){const m={};lines.forEach(l=>m[l.itemId]=(m[l.itemId]||0)+l.qty);return m}
 function stockShort(need){const hb=hideBalance();return Object.entries(need).filter(([id,q])=>(+(byId('items',id)||{}).onHand||0)<q-1e-9).map(([id,q])=>hb?`${itemName(id)} (الكمية مش متاحة)`:`${itemName(id)} (محتاج ${num(q,2)}، متاح ${num((byId('items',id)||{}).onHand,2)})`)}
@@ -1185,6 +1191,7 @@ function grnForm(poId){
   openDrawer('إذن استلام جديد',`<form class="main"><div class="fg">
     ${sel('أمر الشراء','poId',[['','بدون أمر شراء (استلام مباشر)'],...open.map(p=>[p.id,`${p.no} · ${supName(p.supplierId)}`])],poId||'',{full:true})}
     <div class="f full" id="supWrap">${sel('المورد','supplierId',[['','اختار مورد'],...S.suppliers.filter(s=>s.status!=='blocked').map(s=>[s.id,s.name])],'')}</div>
+    <div class="f full" id="whWrap">${sel('المخزن','whId',whOpts(),'',{full:true})}</div>
     ${fld('تاريخ الاستلام','date',{type:'date',value:today(),req:true})}
     ${fld('رقم إذن تسليم المورد','dn',{attrs:'dir="ltr"'})}
     ${fld('رقم اللوط / الدفعة','lot',{value:'LOT-'+today().replace(/-/g,'').slice(2),req:true,attrs:'dir="ltr"'})}
@@ -1209,11 +1216,12 @@ function grnForm(poId){
     for(const l of lines){const ino=genNo('INS');await put('inspections',ino,{no:ino,poId:pid||'',poNo,grn:no,supplierId,itemId:l.itemId,qty:l.qty,price:l.price,lot,expiry,date,status:'pending',ts:Date.now()})}
     toast(`اتسجل إذن الاستلام ${no} واتبعت ${lines.length} صنف للفحص`);
   },body=>{
-    const f=body.querySelector('form'),wrap=body.querySelector('#grnLines'),sw=body.querySelector('#supWrap');
-    const draw=()=>{const pid=f.poId.value;sw.hidden=!!pid;f.supplierId.required=!pid;
+    const f=body.querySelector('form'),wrap=body.querySelector('#grnLines'),sw=body.querySelector('#supWrap'),ww=body.querySelector('#whWrap');
+    const draw=()=>{const pid=f.poId.value;sw.hidden=!!pid;ww.hidden=!!pid;f.supplierId.required=!pid;
       if(pid){const p=byId('pos',pid);wrap.innerHTML=`<div class="lh rcv"><span>الصنف</span><span>المتبقي على الأمر</span><span>المستلم دلوقتي</span></div><div class="lines">${(p.lines||[]).map((x,i)=>{const rem=Math.max(0,x.qty-(x.received||0));return`<div class="line rcv"><span>${esc(itemName(x.itemId))}</span><span class="code">${num(rem,2)} ${esc(itemUnit(x.itemId))}</span><input name="r_${i}" type="text" inputmode="decimal" data-calc="1" value="${rem}" aria-label="الكمية المستلمة"></div>`}).join('')}</div>`}
       else wrap.innerHTML=linesBlock([])};
     f.poId.addEventListener('change',draw);draw();
+    wireWhFilter(body,f.whId);
   });
 }
 function openGrn(id){
@@ -1249,6 +1257,7 @@ function issueForm(itemId,kind){
   const deptField=deptList.length?sel(isBranch?'الفرع المستلم':'الجهة المستلمة','dept',[['','اختار'],...deptList.map(d=>[d.name,`${d.name} (${(DEPT_K[d.kind]||DEPT_K.prod)[0]})`])],'',{full:true,req:true}):fld(isBranch?'الفرع المستلم':'الجهة المستلمة','dept',{value:isBranch?'':'الإنتاج',req:true,attrs:'list="depts"'});
   openDrawer(isBranch?'تسليم لفرع':'إذن صرف جديد',`<form class="main"><div class="fg">
     ${deptField}
+    ${sel('المخزن','whId',whOpts(),'',{full:true})}
     ${fld(isBranch?'تاريخ التسليم':'تاريخ الصرف','date',{type:'date',value:today(),req:true})}
     ${isBranch?'':fld('أمر التشغيل / المرجع','wo',{attrs:'dir="ltr" placeholder="WO-..."'})}
     ${fld(isBranch?'اسم المستلم في الفرع':'اسم المستلم','by',{})}
@@ -1270,6 +1279,7 @@ function issueForm(itemId,kind){
   },body=>{
     const av=body.querySelector('#avail small');const hb=hideBalance();const upd=()=>{const ids=[...body.querySelectorAll('[name=li_item]')].map(s=>s.value).filter(Boolean);av.textContent=ids.length?'المتاح: '+[...new Set(ids)].map(id=>{const i=byId('items',id);return hb?`${i.name} ${BAL_HIDE}`:`${i.name} ${num(i.onHand,2)} ${i.unit||''}`}).join(' · '):''};
     body.addEventListener('change',upd);upd();
+    wireWhFilter(body,body.querySelector('form').whId);
   });
 }
 function openIssue(id){
@@ -1290,13 +1300,16 @@ function renderIret(){
 function ireturnForm(issueId){
   if(!S.items.length){toast('أضف صنف الأول','bad');return}
   const iss=S.issues.filter(s=>issueRemain(s)>0).sort((a,b)=>(b.ts||0)-(a.ts||0));
+  const deptList=S.depts.filter(d=>d.active!=='no').sort((a,b)=>String(a.code).localeCompare(String(b.code)));
+  const deptField=deptList.length?sel('الجهة المرتجعة','dept',[['','اختار'],...deptList.map(d=>[d.name,`${d.name} (${(DEPT_K[d.kind]||DEPT_K.prod)[0]})`])],'',{full:true,req:true}):fld('الجهة المرتجعة','dept',{value:'الإنتاج',req:true,attrs:'list="depts"'});
   openDrawer('مرتجع صرف جديد',`<form class="main"><div class="fg">
-    ${sel('إذن الصرف الأصلي','issueId',[['','بدون إذن صرف'],...iss.map(s=>[s.id,`${s.no} · ${s.dept}${s.wo?' · '+s.wo:''}`])],issueId||'',{full:true})}
-    ${fld('الجهة المرتجعة','dept',{value:'الإنتاج',req:true,attrs:'list="depts"'})}
+    ${deptField}
+    ${sel('اربطه بإذن صرف معين (اختياري)','issueId',[['','من غير ربط بإذن صرف معين'],...iss.map(s=>[s.id,`${s.no} · ${s.dept}${s.wo?' · '+s.wo:''}`])],issueId||'',{full:true})}
+    ${sel('المخزن','whId',whOpts(),'',{full:true})}
     ${fld('تاريخ المرتجع','date',{type:'date',value:today(),req:true})}
     ${sel('السبب','reason',Object.entries(IR_REASON),'surplus')}
     ${sel('حالة البضاعة','condition',[['good','سليمة: ترجع المخزون'],['damaged','تالفة: متدخلش المخزون']],'good')}
-  </div><datalist id="depts">${deptNames().map(d=>`<option value="${esc(d)}">`).join('')}</datalist>
+  </div>${deptList.length?'':`<datalist id="depts">${deptNames().map(d=>`<option value="${esc(d)}">`).join('')}</datalist>`}
   <h3 class="sec">الأصناف المرتجعة</h3><div id="irLines" style="display:flex;flex-direction:column;gap:8px"></div>
   <div class="fg">${area('ملاحظات','notes','')}</div>
   ${formActions('سجّل المرتجع')}</form>`,
@@ -1312,8 +1325,10 @@ function ireturnForm(issueId){
     toast(cond==='good'?`اتسجل ${no} ورجع للمخزون`:`اتسجل ${no} كتالف`);
   },body=>{
     const f=body.querySelector('form'),wrap=body.querySelector('#irLines');
-    const draw=()=>{const sid=f.issueId.value;if(sid){const s=byId('issues',sid);f.dept.value=s.dept||f.dept.value;wrap.innerHTML=`<div class="lh rc4"><span>الصنف</span><span>المنصرف</span><span>المتاح للإرجاع</span><span>المرتجع</span></div><div class="lines">${(s.lines||[]).map((l,i)=>{const rem=Math.max(0,l.qty-(l.returned||0));return`<div class="line rc4"><span>${esc(itemName(l.itemId))}</span><span class="code">${num(l.qty,2)}</span><span class="code">${num(rem,2)}</span><input name="ir_${i}" type="text" inputmode="decimal" data-calc="1" value="" placeholder="0" aria-label="الكمية المرتجعة"${rem?'':' disabled'}></div>`}).join('')}</div>`}else wrap.innerHTML=linesBlock([],{np:true})};
+    const setDept=v=>{if(!v)return;if(f.dept.tagName==='SELECT'&&![...f.dept.options].some(o=>o.value===v)){const o=document.createElement('option');o.value=v;o.textContent=v+' (مش في قايمة الأقسام الحالية)';f.dept.insertBefore(o,f.dept.firstChild)}f.dept.value=v};
+    const draw=()=>{const sid=f.issueId.value;if(sid){const s=byId('issues',sid);setDept(s.dept);wrap.innerHTML=`<div class="lh rc4"><span>الصنف</span><span>المنصرف</span><span>المتاح للإرجاع</span><span>المرتجع</span></div><div class="lines">${(s.lines||[]).map((l,i)=>{const rem=Math.max(0,l.qty-(l.returned||0));return`<div class="line rc4"><span>${esc(itemName(l.itemId))}</span><span class="code">${num(l.qty,2)}</span><span class="code">${num(rem,2)}</span><input name="ir_${i}" type="text" inputmode="decimal" data-calc="1" value="" placeholder="0" aria-label="الكمية المرتجعة"${rem?'':' disabled'}></div>`}).join('')}</div>`}else wrap.innerHTML=linesBlock([],{np:true,whId:f.whId.value})};
     f.issueId.addEventListener('change',draw);draw();
+    f.whId.addEventListener('change',()=>{if(!f.issueId.value)draw()});
   });
 }
 function openIret(id){
@@ -1347,6 +1362,7 @@ function rreturnForm(supId){
   <h3 class="sec">من مرفوضات الفحص</h3><div id="rrRej"></div>
   <h3 class="sec">استلام اتسجل غلط (لسه ما اتفحصش)</h3><p style="margin:0;color:var(--muted);font-size:13px">للوط لسه في انتظار فحص الجودة ومحتاج يتلغي (كود، كمية، أو صنف غلط). مفيش حاجة دخلت المخزون لسه، فمفيش خصم — بس بيتسجل كمرتجع بسببه عشان السجل يفضل كامل، واللوط بيتشال من قايمة انتظار الفحص.</p><div id="rrPre"></div>
   <h3 class="sec">من المخزون</h3><p style="margin:0;color:var(--muted);font-size:13px">لعيوب ظهرت بعد ما البضاعة دخلت المخزون. الكمية دي بتتخصم من الرصيد.</p>
+  <div class="fg">${sel('المخزن','whId',whOpts(),'',{full:true})}</div>
   ${linesBlock([],{empty:true,priceLbl:'قيمة الوحدة',addLbl:'صنف من المخزون'})}
   <div class="fg">${area('ملاحظات / طريقة الإرجاع','notes','')}</div>
   ${formActions('سجّل المرتجع')}</form>`,
@@ -1370,6 +1386,7 @@ function rreturnForm(supId){
       const Q=pendingPreQc(sid);wrapPre.innerHTML=Q.length?`<div class="lines" style="margin-top:8px">${Q.map(x=>`<label class="line rcv" style="align-items:center"><input type="checkbox" name="pq_${x.id}" value="1"><span>${esc(itemName(x.itemId))}<span class="sub">${esc(x.lot)} · ${esc(x.grn||x.poNo||'')}</span></span><span class="code">${num(x.qty,2)} ${esc(itemUnit(x.itemId))}</span></label>`).join('')}</div>`:`<p style="margin:0;color:var(--muted);font-size:13px">${sid?'مفيش استلام منتظر فحص عند المورد ده.':'اختار المورد الأول.'}</p>`;
     };
     f.supplierId.addEventListener('change',draw);draw();
+    wireWhFilter(body,f.whId);
   });
 }
 function openRret(id){
@@ -1397,10 +1414,13 @@ function renderQa(){
 const BILL_ST={unpaid:['غير مسددة','bad'],partial:['مسددة جزئيًا','warn'],paid:['مسددة بالكامل','ok']};
 const PAY_METHOD={cash:'نقدي',bank:'تحويل بنكي',cheque:'شيك'};
 function billStatus(b){const paid=+b.paid||0,amt=+b.amount||0;return paid<=0?'unpaid':paid+0.01<amt?'partial':'paid'}
+// unallocated part of any advance payment still counts against what the supplier is owed, same as a bill
+// payment does - the difference is it isn't tied to a specific bill yet
+const advanceLeft=sid=>sum(S.payments.filter(p=>p.supplierId===sid&&p.advance),p=>Math.max(0,(+p.amount||0)-sum(p.alloc||[],a=>+a[1]||0)));
 function supplierDue(sid){
   const billsDue=sum(S.bills.filter(b=>b.supplierId===sid),b=>Math.max(0,(+b.amount||0)-(+b.paid||0)));
   const returned=sum(S.rreturns.filter(r=>r.supplierId===sid),r=>+r.value||0);
-  return Math.round((billsDue-returned)*100)/100;
+  return Math.round((billsDue-returned-advanceLeft(sid))*100)/100;
 }
 function termsDays(terms){const m=String(terms||'').match(/\d+/);return m?+m[0]:0}
 // one bill per GRN: grows as each line on that receipt gets accepted in QA, matching the supplier's actual delivery note/invoice
@@ -1435,7 +1455,7 @@ function renderBills(){
 }
 function supplierLedgerRows(sid,from,to){
   const bills=S.bills.filter(b=>b.supplierId===sid).map(b=>({date:b.date,type:b.opening?'opening':'bill',ref:b.no,debit:+b.amount||0,credit:0,ts:b.ts||0}));
-  const pays=S.payments.filter(p=>p.supplierId===sid).map(p=>({date:p.date,type:'payment',ref:p.no,debit:0,credit:+p.amount||0,ts:p.ts||0}));
+  const pays=S.payments.filter(p=>p.supplierId===sid).map(p=>({date:p.date,type:p.advance?'advance':'payment',ref:p.no,debit:0,credit:+p.amount||0,ts:p.ts||0}));
   const rets=S.rreturns.filter(r=>r.supplierId===sid).map(r=>({date:r.date,type:'return',ref:r.no,debit:0,credit:+r.value||0,ts:r.ts||0}));
   const all=[...bills,...pays,...rets].sort((a,b)=>(a.date||'').localeCompare(b.date||'')||a.ts-b.ts);
   let bal=0,opening=0;const rows=[];
@@ -1449,7 +1469,7 @@ function supplierLedgerRows(sid,from,to){
 }
 function openSupplierLedger(sid){
   const s=byId('suppliers',sid);if(!s)return;
-  const tr=r=>`<tr><td class="code">${r.date}</td><td>${r.type==='opening'?'رصيد افتتاحي':r.type==='bill'?'فاتورة':r.type==='return'?'مرتجع لمورد':'سداد'}</td><td>${code(r.ref)}</td><td class="num" style="color:var(--bad)">${r.debit?money(r.debit):'—'}</td><td class="num" style="color:var(--ok)">${r.credit?money(r.credit):'—'}</td><td class="num"><b>${money(r.bal)}</b></td></tr>`;
+  const tr=r=>`<tr><td class="code">${r.date}</td><td>${r.type==='opening'?'رصيد افتتاحي':r.type==='bill'?'فاتورة':r.type==='return'?'مرتجع لمورد':r.type==='advance'?'دفعة مقدمة':'سداد'}</td><td>${code(r.ref)}</td><td class="num" style="color:var(--bad)">${r.debit?money(r.debit):'—'}</td><td class="num" style="color:var(--ok)">${r.credit?money(r.credit):'—'}</td><td class="num"><b>${money(r.bal)}</b></td></tr>`;
   const draw=()=>{
     const from=($('#ledFrom')||{}).value||'',to=($('#ledTo')||{}).value||'';
     const{rows,opening}=supplierLedgerRows(sid,from,to);
@@ -1460,7 +1480,7 @@ function openSupplierLedger(sid){
   openDrawer(`كشف حساب ${s.name}`,`<div class="kv"><div><small>الرصيد المستحق حاليًا</small><b class="big">${money(supplierDue(sid))}</b></div><div><small>عدد الفواتير</small><b>${S.bills.filter(b=>b.supplierId===sid).length}</b></div><div><small>عدد السدادات</small><b>${S.payments.filter(p=>p.supplierId===sid).length}</b></div><div><small>عدد المرتجعات</small><b>${S.rreturns.filter(r=>r.supplierId===sid).length}</b></div></div>
   <div class="fg"><label class="f"><span>من تاريخ</span><input type="date" id="ledFrom" class="in"></label><label class="f"><span>لحد تاريخ</span><input type="date" id="ledTo" class="in"></label></div>
   <div id="ledPanel" class="panel"></div>
-  <div class="actions"><div class="gap"><button class="btn" data-a="openingBalance" data-id="${sid}">رصيد افتتاحي إضافي</button><button class="btn pri" data-a="paySupplier" data-id="${sid}">سدّد للمورد</button></div></div>`,
+  <div class="actions"><div class="gap"><button class="btn" data-a="openingBalance" data-id="${sid}">رصيد افتتاحي إضافي</button><button class="btn" data-a="advancePayment" data-id="${sid}">دفعة مقدمة</button></div><div class="gap"><button class="btn pri" data-a="paySupplier" data-id="${sid}">سدّد للمورد</button></div></div>`,
   null,body=>{
     body.querySelector('#ledFrom').addEventListener('change',draw);
     body.querySelector('#ledTo').addEventListener('change',draw);
@@ -1530,8 +1550,8 @@ function openBill(id){
 }
 function renderPayments(){
   const list=[...S.payments].filter(p=>match(p.no,supName(p.supplierId),p.ref)).sort((a,b)=>(b.ts||0)-(a.ts||0));
-  const row=p=>`<tr class="click" data-a="openPayment" data-id="${p.id}"><td>${code(p.no)}</td><td>${esc(supName(p.supplierId))}</td><td class="code">${p.date}</td><td>${PAY_METHOD[p.method]||p.method}</td><td class="num">${money(p.amount)}</td><td>${whoH(p.createdBy)}</td></tr>`;
-  return head('سداد الموردين','سجّل دفعة لمورد، وهتتوزع تلقائي على أقدم فواتيره المستحقة.',searchBox('مورد، رقم سداد، أو مرجع')+`<button class="btn pri w" data-a="paySupplier">سداد جديد</button>`)+
+  const row=p=>`<tr class="click" data-a="openPayment" data-id="${p.id}"><td>${code(p.no)}${p.advance?' '+chip('دفعة مقدمة','mute'):''}</td><td>${esc(supName(p.supplierId))}</td><td class="code">${p.date}</td><td>${PAY_METHOD[p.method]||p.method}</td><td class="num">${money(p.amount)}</td><td>${whoH(p.createdBy)}</td></tr>`;
+  return head('سداد الموردين','سجّل دفعة لمورد، وهتتوزع تلقائي على أقدم فواتيره المستحقة.',searchBox('مورد، رقم سداد، أو مرجع')+`<button class="btn w" data-a="advancePayment">دفعة مقدمة</button><button class="btn pri w" data-a="paySupplier">سداد جديد</button>`)+
   `<section class="panel">${tbl(['رقم السداد','المورد','التاريخ','الطريقة',['المبلغ','num'],'بواسطة'],list.map(row),S.payments.length?'مفيش نتايج للبحث ده.':'<b>مفيش سدادات لسه</b>سجّل أول سداد لمورد من هنا.')}</section>`;
 }
 function paySupplierForm(sid){
@@ -1565,10 +1585,33 @@ function paySupplierForm(sid){
     f.supplierId.addEventListener('change',draw);draw();
   });
 }
+// paid before any bill exists (or more than the current due), so it can't go through the normal
+// سداد form (which only allocates against already-open bills and refuses to exceed the current due).
+// Kept as a plain payments doc like any other, just tagged advance:true with no allocation yet -
+// supplierDue() already subtracts its unallocated part, so the due balance stays accurate immediately.
+function advancePaymentForm(sid){
+  if(!S.suppliers.length){toast('أضف مورد الأول','bad');return}
+  openDrawer('دفعة مقدمة لمورد',`<form class="main"><div class="fg">
+    ${sel('المورد','supplierId',[['','اختار مورد'],...S.suppliers.map(s=>[s.id,s.name])],sid||'',{full:true,req:true})}
+    ${fld('تاريخ الدفعة','date',{type:'date',value:today(),req:true})}
+    ${fld('المبلغ (ج.م)','amount',{type:'text',attrs:'inputmode="decimal" data-calc="1"',req:true,full:true,hint:'مش مربوطة بفاتورة معينة — بس بتقلل المستحق على المورد ده فورًا.'})}
+    ${sel('طريقة الدفع','method',Object.entries(PAY_METHOD),'bank')}
+    ${fld('رقم مرجعي (شيك/تحويل)','ref',{attrs:'dir="ltr"'})}
+  </div>
+  <div class="fg">${area('ملاحظات','notes','')}</div>
+  ${formActions('سجّل الدفعة المقدمة')}</form>`,
+  async fd=>{
+    const psid=fd.get('supplierId');if(!psid){toast('اختار المورد','bad');return false}
+    const amt=toNum(fd.get('amount'));if(!(amt>0)){toast('اكتب مبلغ أكبر من صفر','bad');return false}
+    const no=genNo('PAY');
+    await put('payments',no,{no,date:fd.get('date'),supplierId:psid,amount:amt,method:fd.get('method'),ref:fd.get('ref'),notes:fd.get('notes'),alloc:[],advance:true,ts:Date.now()});
+    toast(`اتسجلت الدفعة المقدمة ${no} بمبلغ ${money(amt)}`);
+  });
+}
 function openPayment(id){
   const p=byId('payments',id);if(!p)return;
-  openDrawer(`سداد ${p.no}`,`<div class="kv"><div><small>المورد</small><b>${esc(supName(p.supplierId))}</b></div><div><small>التاريخ</small><b>${p.date}</b></div><div><small>الطريقة</small><b>${PAY_METHOD[p.method]||p.method}</b></div><div><small>المرجع</small><b>${esc(p.ref||'—')}</b></div><div><small>المبلغ</small><b>${money(p.amount)}</b></div></div>
-  <div class="panel">${tbl(['الفاتورة',['المبلغ المخصص','num']],(p.alloc||[]).map(([bid,amt])=>{const b=byId('bills',bid);return`<tr><td>${b?code(b.no):bid}</td><td class="num">${money(amt)}</td></tr>`}),'—')}</div>
+  openDrawer(`${p.advance?'دفعة مقدمة':'سداد'} ${p.no}`,`<div class="kv"><div><small>المورد</small><b>${esc(supName(p.supplierId))}</b></div><div><small>التاريخ</small><b>${p.date}</b></div><div><small>الطريقة</small><b>${PAY_METHOD[p.method]||p.method}</b></div><div><small>المرجع</small><b>${esc(p.ref||'—')}</b></div><div><small>المبلغ</small><b>${money(p.amount)}</b></div>${p.advance?`<div><small>لسه مش مخصص لفاتورة</small><b>${money(Math.max(0,(+p.amount||0)-sum(p.alloc||[],a=>+a[1]||0)))}</b></div>`:''}</div>
+  <div class="panel">${tbl(['الفاتورة',['المبلغ المخصص','num']],(p.alloc||[]).map(([bid,amt])=>{const b=byId('bills',bid);return`<tr><td>${b?code(b.no):bid}</td><td class="num">${money(amt)}</td></tr>`}),p.advance?'لسه ما اتخصصتش لأي فاتورة.':'—')}</div>
   ${p.notes?`<div class="note"><span>${esc(p.notes)}</span></div>`:''}
   ${histHtml(p)}`);
 }
@@ -2401,6 +2444,7 @@ const ACT={
   exportRevalXlsx:(d,b)=>run(async()=>{b.disabled=true;try{await exportRevalXlsx()}finally{b.disabled=false}}),
   openBill:d=>openBill(d.id),
   paySupplier:d=>paySupplierForm(d&&d.id),
+  advancePayment:d=>advancePaymentForm(d&&d.id),
   openPayment:d=>openPayment(d.id),
   openSupplierLedger:d=>openSupplierLedger(d.id),
   openingBalance:d=>openingBalanceForm(d&&d.id),
@@ -2457,7 +2501,7 @@ function arm(b,fn){if(b.dataset.armed){delete b.dataset.armed;fn();return}const 
 // action -> module it belongs to; ':view' opens a record (read allowed if the module is visible)
 const ACT_MOD={addSupplier:'suppliers',editSupplier:'suppliers:view',autoCodeSup:'suppliers',xlImportSup:'suppliers',xlImportItems:'inv',addWh:'wh',editWh:'wh:view',seedWh:'wh',addDept:'dept',editDept:'dept:view',seedDept:'dept',addItem:'inv',editItem:'inv:view',move:'inv',addRfq:'rfqs',rfqFromItem:'rfqs',openRfq:'rfqs:view',award:'rfqs',setFx:'rfqs',delQuote:'rfqs',cancelRfq:'rfqs',paste:'rfqs',invite:'rfqs',copyInvite:'rfqs',
   addPo:'pos',openPo:'pos:view',editPo:'pos',sendPo:'pos',cancelPo:'pos',approvePo:'approve',rejectPo:'approve',receive:'grn',grnNew:'grn',openGrn:'grn:view',inspect:'qa',issueNew:'issue',issueBranch:'issue',openIssue:'issue:view',editSale:'sales:view',
-  iretNew:'iret',openIret:'iret:view',rretNew:'rret',openRret:'rret:view',addShip:'ship',editShip:'ship',shipNext:'ship',openShip:'ship:view',settings:'admin',clearSample:'admin',wipeDemo:'admin',toggleMaintenance:'admin',setRole:'admin',delRole:'admin',addRole:'admin',dismissReq:'admin',approveDevice:'admin',exportXlsx:'reports',copyReport:'reports:view',openLedger:'inv:view',exportLedger:'reports',addCount:'count',openCount:'count:view',saveCount:'count',postCount:'count',cancelCount:'count',exportCountXlsx:'count:view',applyRevalPct:'reval',postReval:'reval',openReval:'reval:view',exportRevalXlsx:'reval:view',openBill:'bills:view',paySupplier:'payments',openPayment:'payments:view',openSupplierLedger:'bills:view',openingBalance:'bills',exportOpeningXlsx:'bills'};
+  iretNew:'iret',openIret:'iret:view',rretNew:'rret',openRret:'rret:view',addShip:'ship',editShip:'ship',shipNext:'ship',openShip:'ship:view',settings:'admin',clearSample:'admin',wipeDemo:'admin',toggleMaintenance:'admin',setRole:'admin',delRole:'admin',addRole:'admin',dismissReq:'admin',approveDevice:'admin',exportXlsx:'reports',copyReport:'reports:view',openLedger:'inv:view',exportLedger:'reports',addCount:'count',openCount:'count:view',saveCount:'count',postCount:'count',cancelCount:'count',exportCountXlsx:'count:view',applyRevalPct:'reval',postReval:'reval',openReval:'reval:view',exportRevalXlsx:'reval:view',openBill:'bills:view',paySupplier:'payments',advancePayment:'payments',openPayment:'payments:view',openSupplierLedger:'bills:view',openingBalance:'bills',exportOpeningXlsx:'bills'};
 const COL_MOD={suppliers:'suppliers',items:'inv',pos:'pos',shipments:'ship',warehouses:'wh',depts:'dept'};
 const actAllowed=(name,d)=>{let spec=name==='del'?COL_MOD[d.col]:ACT_MOD[name];if(!spec)return true;const[m,v]=spec.split(':');return v==='view'?(canSee(m)||canEditMod(m)):canEditMod(m)};
 document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(!b)return;const name=b.dataset.a,a=ACT[name];if(!a)return;
