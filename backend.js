@@ -152,7 +152,7 @@
   // still needs its own real (unscaled) row of to even sign in and render the app shell at all.
   const PARTNER_SCALED_COLS = new Set(['suppliers', 'rfqs', 'pos', 'grns', 'inspections', 'items',
     'movements', 'issues', 'rreturns', 'ireturns', 'warehouses', 'depts', 'counts', 'sales',
-    'revals', 'bills', 'payments', 'shipments']);
+    'revals', 'bills', 'payments', 'shipments', 'custody']);
   const mapErr = e => { const c = String(e && e.code || ''); const err = new Error(e && e.message || 'خطأ في الحفظ'); err.code = c === '42501' || /row-level security/i.test(err.message) ? 'invalid_argument' : /fetch|network/i.test(err.message) ? 'unavailable' : c; return err; };
   function emit(col) { const s = subs.get(col); if (!s) return; const docs = [...s.map.entries()].map(([id, data]) => ({ id, data: () => data })); s.cbs.forEach(cb => { try { cb({ docs }); } catch (e) { console.error(e); } }); }
   // "items" loads through a view that strips onHand/cost for the clerk role (a clerk still needs
