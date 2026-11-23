@@ -429,7 +429,7 @@ tr.grp:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 <script>
 document.documentElement.dir='rtl';document.documentElement.lang='ar';
 const $=s=>document.querySelector(s);
-const COLS=['suppliers','items','rfqs','pos','inspections','shipments','movements','settings','grns','issues','rreturns','ireturns','roles','requests','warehouses','depts','counts','sales','revals','devices','bills','payments'];
+const COLS=['suppliers','items','rfqs','pos','inspections','shipments','movements','settings','grns','issues','rreturns','ireturns','roles','requests','warehouses','depts','counts','sales','revals','devices','bills','payments','custody'];
 const DEFAULT_FORM_URL=(()=>{try{return new URL('quote-form.html',location.href).href}catch(e){return 'quote-form.html'}})();
 const S={};COLS.forEach(c=>S[c]=[]);
 const loaded=new Set();
@@ -442,7 +442,7 @@ const ROLES={
   admin:{t:'مدير النظام',see:'*',edit:'*',approve:true},
   manager:{t:'الإدارة',see:'*',edit:'*',approve:true},
   purchasing:{t:'المشتريات',see:['dash','suppliers','rfqs','pos','inv','reval','reports','activity'],edit:['suppliers','rfqs','pos','reval']},
-  warehouse:{t:'المخازن',see:['dash','pos','grn','qa','inv','issue','rret','iret','wh','dept','count','sales','activity'],edit:['grn','inv','issue','rret','iret','wh','count']},
+  warehouse:{t:'المخازن',see:['dash','pos','grn','qa','inv','issue','rret','iret','custody','wh','dept','count','sales','activity'],edit:['grn','inv','issue','rret','iret','custody','wh','count']},
   quality:{t:'الجودة',see:['dash','suppliers','grn','qa','inv','rret','wh','count','activity'],edit:['qa']},
   shipping:{t:'الشحن',see:['dash','inv','ship','sales','activity'],edit:['ship']},
   clerk:{t:'إدخال الاستلام والصرف',see:['dash','pos','grn','issue'],edit:['grn','issue']},
@@ -531,6 +531,7 @@ const pad=n=>String(n).padStart(2,'0');
 const today=()=>{const d=new Date();return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`};
 const addDays=(d,n)=>{const t=new Date((d||today())+'T00:00:00Z');t.setUTCDate(t.getUTCDate()+(Number(n)||0));return t.toISOString().slice(0,10)};
 const daysBetween=(a,b)=>Math.round((new Date(b+'T00:00:00Z')-new Date(a+'T00:00:00Z'))/864e5);
+const addMonths=(d,n)=>{const t=new Date((d||today())+'T00:00:00Z');t.setUTCMonth(t.getUTCMonth()+(Number(n)||0));return t.toISOString().slice(0,10)};
 const sum=(a,f)=>a.reduce((s,x)=>s+(Number(f(x))||0),0);
 const clone=o=>JSON.parse(JSON.stringify(o));
 const strip=o=>{const c=Object.assign({},o);delete c.id;return c};
@@ -574,7 +575,7 @@ const RFQ_ST={open:['مفتوح','info'],awarded:['تمت الترسية','ok'],
 const QC_D={accept:['مقبول','ok'],conditional:['قبول مشروط','warn'],reject:['مرفوض','bad']};
 const SHIP_FLOW=['prep','shipped','transit','delivered'];
 const SHIP_ST={prep:['تجهيز','mute'],shipped:['تم الشحن','info'],transit:['في الطريق','warn'],delivered:['تم التسليم','ok'],cancelled:['ملغي','bad']};
-const MV_T={receipt:'استلام بعد الفحص',issue:'صرف',adjust:'تسوية جرد',ship:'شحن لعميل',manual:'إضافة يدوية',open:'رصيد افتتاحي',rreturn:'مرتجع لمورد',ireturn:'مرتجع من صرف'};
+const MV_T={receipt:'استلام بعد الفحص',issue:'صرف',adjust:'تسوية جرد',ship:'شحن لعميل',manual:'إضافة يدوية',open:'رصيد افتتاحي',rreturn:'مرتجع لمورد',ireturn:'مرتجع من صرف',custodyOut:'تسليم عهدة',custodyRet:'ارتجاع عهدة'};
 const DEPTS=['الإنتاج','الصيانة','التعبئة والتغليف','الجودة','المخازن','الإدارة'];
 // departments come from the الأقسام screen once defined; until then the old fixed list
 const deptNames=()=>{const a=S.depts.filter(d=>d.active!=='no').sort((x,y)=>String(x.code).localeCompare(String(y.code))).map(d=>d.name);return a.length?a:DEPTS};
@@ -616,7 +617,7 @@ function gradeHtml(g){if(!g)return`<span class="grade t-mute">—</span>`;return
 /* ---------- data layer ---------- */
 function localSet(col,id,data){const i=S[col].findIndex(x=>x.id===id);const rec=Object.assign({id},data);if(i>=0)S[col][i]=rec;else S[col].push(rec)}
 function errMsg(e){const c=e&&e.code;if(c==='invalid_argument')return'التعديل اترفض. غالبًا صلاحيتك على الصفحة دي قراءة بس.';if(c==='quota_exceeded')return'مساحة البيانات اتملت. امسح سجلات قديمة وجرّب تاني.';if(c==='resource_exhausted')return'طلبات كتير ورا بعض. استنى ثواني وجرّب تاني.';if(c==='unavailable')return'الاتصال اتقطع لحظيًا. جرّب تاني.';return(e&&e.message)||'حصل خطأ غير متوقع.'}
-const HIST=new Set(['suppliers','items','rfqs','pos','grns','issues','rreturns','ireturns','shipments','inspections','roles','warehouses','depts','counts','sales','revals','devices','bills','payments']);
+const HIST=new Set(['suppliers','items','rfqs','pos','grns','issues','rreturns','ireturns','shipments','inspections','roles','warehouses','depts','counts','sales','revals','devices','bills','payments','custody']);
 async function put(col,id,data,act){
   const clean=strip(data),prev=byId(col,id),now=Date.now();
   if(!prev&&!clean.createdAt){clean.createdBy=me.id||'';clean.createdAt=now}
@@ -664,7 +665,8 @@ const VIEWS={
   sales:{t:'مبيعات الفروع',r:renderSales,g:'المخازن'},
   reval:{t:'إعادة تقييم المخزون',r:renderReval,g:'المخازن'},
   bills:{t:'فواتير الموردين',r:renderBills,g:'الحسابات'},
-  payments:{t:'سداد الموردين',r:renderPayments,g:'الحسابات'}
+  payments:{t:'سداد الموردين',r:renderPayments,g:'الحسابات'},
+  custody:{t:'العُهد',r:renderCustody,g:'المخازن'}
 };
 const VIEW_MOD={dash:'',reports:'',activity:'',users:'admin'};
 const viewMod=v=>v in VIEW_MOD?VIEW_MOD[v]:v;
@@ -682,14 +684,14 @@ function navCount(v){
 const APPS=[
   {k:'dash',t:'لوحة التحكم',v:['dash'],c:'#714B67',i:'dash'},
   {k:'purchase',t:'المشتريات',v:['rfqs','pos','suppliers'],c:'#B5473A',i:'purchase'},
-  {k:'inventory',t:'المخزون',v:['inv','grn','issue','rret','iret','wh','dept','count','sales','reval'],c:'#1E8A5A',i:'inventory'},
+  {k:'inventory',t:'المخزون',v:['inv','grn','issue','rret','iret','custody','wh','dept','count','sales','reval'],c:'#1E8A5A',i:'inventory'},
   {k:'quality',t:'الجودة',v:['qa'],c:'#5B5FC7',i:'quality'},
   {k:'ship',t:'الشحن',v:['ship'],c:'#C27A12',i:'ship'},
   {k:'reports',t:'التقارير',v:['reports','activity'],c:'#2F6FB0',i:'reports'},
   {k:'finance',t:'الحسابات المالية',v:['bills','payments'],c:'#8D5A2B',i:'money'},
   {k:'users',t:'الإعدادات',v:['users'],c:'#55606B',i:'users'}
 ];
-const MENU_T={dash:'نظرة عامة',rfqs:'طلبات عروض الأسعار',pos:'أوامر الشراء',suppliers:'الموردين',inv:'المنتجات',grn:'الاستلام',issue:'الصرف',rret:'مرتجعات لموردين',iret:'مرتجعات صرف',qa:'فحص الاستلام',ship:'الشحنات',reports:'تقارير الإدارة',activity:'سجل النشاط',users:'المستخدمين والصلاحيات',wh:'المخازن',dept:'الأقسام',count:'الجرد',sales:'مبيعات الفروع',reval:'إعادة التقييم',bills:'فواتير الموردين',payments:'سداد الموردين'};
+const MENU_T={dash:'نظرة عامة',rfqs:'طلبات عروض الأسعار',pos:'أوامر الشراء',suppliers:'الموردين',inv:'المنتجات',grn:'الاستلام',issue:'الصرف',rret:'مرتجعات لموردين',iret:'مرتجعات صرف',qa:'فحص الاستلام',ship:'الشحنات',reports:'تقارير الإدارة',activity:'سجل النشاط',users:'المستخدمين والصلاحيات',wh:'المخازن',dept:'الأقسام',count:'الجرد',sales:'مبيعات الفروع',reval:'إعادة التقييم',bills:'فواتير الموردين',payments:'سداد الموردين',custody:'العُهد'};
 const appOf=v=>APPS.find(a=>a.v.includes(v))||APPS[0];
 
 function homeHtml(ready){
@@ -790,6 +792,7 @@ function renderDash(){
   }
   pend.forEach(x=>att.push({t:'warn',b:`لوط ${x.lot} منتظر فحص`,s:`${itemName(x.itemId)} · ${num(x.qty)} ${itemUnit(x.itemId)} من ${supName(x.supplierId)}`,a:'inspect',id:x.id,l:'افحص'}));
   S.inspections.filter(x=>x.status==='done'&&x.accepted>0&&x.expiry&&x.expiry<=addDays(today(),7)).forEach(x=>{const d=daysBetween(today(),x.expiry);att.push({t:d<0?'bad':'warn',b:d<0?`لوط ${x.lot} فاتت صلاحيته من ${-d} يوم`:d===0?`لوط ${x.lot} صلاحيته تخلص النهاردة`:`لوط ${x.lot} صلاحيته تخلص خلال ${d} يوم`,s:`${itemName(x.itemId)} · ${num(x.accepted,2)} ${itemUnit(x.itemId)} · صلاحية حتى ${x.expiry}`,a:'openGrn',id:x.grn,l:'افتح الاستلام'})});
+  S.custody.filter(c=>custodyDueState(c)).forEach(c=>{const d=daysBetween(today(),c.dueDate);att.push({t:d<0?'bad':'warn',b:d<0?`عهدة ${c.no} فاتت دورة التجديد من ${-d} يوم`:`عهدة ${c.no} مستحقة تجديد خلال ${d} يوم`,s:`${itemName(c.itemId)} عند ${c.employee} · تجديد ${c.dueDate}`,a:'openCustody',id:c.id,l:'افتح العهدة'})});
   const rj={};pendingRej().forEach(x=>{rj[x.supplierId]=rj[x.supplierId]||{q:0,n:0};rj[x.supplierId].q+=x.rejected-(x.returned||0);rj[x.supplierId].n++});
   Object.entries(rj).forEach(([sid,v])=>att.push({t:'warn',b:`مرفوضات ${supName(sid)} لسه مارجعتش`,s:`${num(v.q,2)} وحدة في ${v.n} لوط · منتظرة إذن مرتجع`,a:'rretNew',id:sid,l:'رجّع للمورد'}));
   openRfq.filter(r=>(r.quotes||[]).length>=2).forEach(r=>att.push({t:'info',b:`طلب ${r.no} وصله ${r.quotes.length} عروض`,s:`${itemName(r.itemId)} · جاهز للمقارنة والترسية`,a:'openRfq',id:r.id,l:'قارن'}));
@@ -1101,7 +1104,11 @@ function itemByLabel(s){s=(s||'').trim();if(!s)return null;return S.items.find(i
 // whId lets the receipt/issue/return forms scope the item picker to one warehouse, so typing in a
 // factory with hundreds of items doesn't surface items that physically aren't there
 function itemsDatalist(whId){return`<datalist id="items-dl">${[...S.items].filter(i=>!whId||i.location===whId).sort((a,b)=>(a.sku||'').localeCompare(b.sku||'')).map(i=>`<option value="${esc(itemLabel(i))}">`).join('')}</datalist>`}
-const whOpts=()=>[['','كل المخازن'],...[...S.warehouses].filter(w=>w.active!=='no').sort((a,b)=>(a.name||'').localeCompare(b.name||'')).map(w=>[w.id,w.name])];
+// items.location stores the warehouse's CODE (itemForm's own datalist suggests "WH01-A03-2"), not its id -
+// for the 5 existing warehouses they happen to be the same string, which hid this until now, but any new
+// warehouse made through "المخازن" gets a generated id different from its code, so matching on id would
+// have silently stopped filtering items for it specifically
+const whOpts=()=>[['','كل المخازن'],...[...S.warehouses].filter(w=>w.active!=='no').sort((a,b)=>(a.name||'').localeCompare(b.name||'')).map(w=>[w.code||w.id,w.name])];
 // swaps the item datalist in place when a form's "المخزن" selector changes, without touching any lines
 // already typed in (re-rendering the whole lines block would wipe them)
 function wireWhFilter(body,whSel){if(!whSel)return;whSel.addEventListener('change',()=>{const dl=body.querySelector('#items-dl');if(dl)dl.outerHTML=itemsDatalist(whSel.value)})}
@@ -1428,6 +1435,74 @@ function openRret(id){
   null,body=>{const f=body.querySelector('#creditForm');if(f)bindForm(f,async fd=>{await patch('rreturns',id,{status:'credited',creditNo:fd.get('creditNo'),creditDate:fd.get('creditDate')},'إشعار خصم '+fd.get('creditNo'));toast('اتسجل إشعار الخصم');openRret(id)})});
 }
 
+/* ---------- custody (عهد الأدوات والمهمات) ---------- */
+const custodyRemain=c=>Math.max(0,(+c.qty||0)-(+c.returnedQty||0)-(+c.lostQty||0));
+const custodyStatus=c=>custodyRemain(c)<=1e-9?'closed':'active';
+const custodyDueState=c=>{if(custodyStatus(c)!=='active'||!c.dueDate)return null;const d=daysBetween(today(),c.dueDate);return d<0?'bad':d<=14?'warn':null};
+function custodyEmployees(){return[...new Set(S.custody.map(c=>c.employee).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'ar'))}
+function renderCustody(){
+  const list=S.custody.filter(c=>match(c.no,c.employee,itemName(c.itemId))).sort((a,b)=>(b.ts||0)-(a.ts||0));
+  const active=S.custody.filter(c=>custodyStatus(c)==='active');
+  const due=active.filter(c=>custodyDueState(c));
+  const row=c=>{const st=custodyStatus(c),due=custodyDueState(c);
+    const stChip=st==='closed'?chip('مقفولة','mute'):due==='bad'?chip('متأخرة التجديد','bad'):due==='warn'?chip('قربت تستحق تجديد','warn'):chip('سارية','ok');
+    return`<tr class="click" data-a="openCustody" data-id="${c.id}"><td>${code(c.no)}</td><td>${esc(itemName(c.itemId))}</td><td>${esc(c.employee)}</td><td class="num">${num(custodyRemain(c),2)} من ${num(c.qty,2)} ${esc(itemUnit(c.itemId))}</td><td class="num">${money((c.unitCost||0)*custodyRemain(c))}</td><td class="code">${c.date}</td><td class="code">${c.dueDate||'—'}</td><td>${stChip}</td></tr>`};
+  return head('العُهد','عُهد الأدوات والمهمات والعدد الخفيفة وملابس العمل، لكل موظف بالاسم. بالكمية وقيمتها عند التسليم.',searchBox('رقم، موظف، صنف')+`<button class="btn pri w" data-a="custodyNew">عهدة جديدة</button>`)+
+  `<div class="kpis"><div class="kpi"><small>قيمة العهد السارية</small><b>${money(sum(active,c=>(c.unitCost||0)*custodyRemain(c)))}</b><span>${active.length} عهدة سارية</span></div><div class="kpi ${due.length?'warn':''}"><small>مستحقة تجديد</small><b>${due.length}</b><span>فاتت أو قربت تفوت دورة الاستبدال</span></div></div>
+  <section class="panel">${tbl(['رقم العهدة','الصنف','الموظف',['الكمية','num'],['القيمة الحالية','num'],'تاريخ التسليم','تاريخ التجديد','الحالة'],list.map(row),S.custody.length?'مفيش نتايج للبحث ده.':'<b>مفيش عُهد مسجلة لسه</b>سلّم أداة أو يونيفورم لموظف من هنا.')}</section>`;
+}
+function custodyForm(){
+  if(!S.items.length){toast('أضف صنف الأول','bad');return}
+  openDrawer('عهدة جديدة',`<form class="main"><div class="fg">
+    ${fld('اسم الموظف','employee',{req:true,full:true,attrs:'list="custEmps"'})}
+    ${sel('المخزن','whId',whOpts(),'',{full:true})}
+    ${fld('تاريخ التسليم','date',{type:'date',value:today(),req:true})}
+  </div><datalist id="custEmps">${custodyEmployees().map(e=>`<option value="${esc(e)}">`).join('')}</datalist>
+  <h3 class="sec">الأصناف</h3>${linesBlock([],{np:true,addLbl:'صنف عهدة'})}
+  <div class="fg">${area('ملاحظات','notes','')}</div>
+  ${formActions('سلّم العهدة واخصم من المخزون')}</form>`,
+  async fd=>{
+    const lines=readLines(fd,true);if(!lines.length){toast(noLinesMsg(fd),'bad');return false}
+    const need=aggregate(lines),short=stockShort(need);if(short.length){toast('الرصيد مش كفاية: '+short.join('، '),'bad');return false}
+    const employee=(fd.get('employee')||'').trim();if(!employee){toast('اكتب اسم الموظف','bad');return false}
+    const date=fd.get('date'),notes=fd.get('notes');
+    for(const l of lines){
+      const it=byId('items',l.itemId)||{},unitCost=+it.cost||0,cycleMonths=+it.cycleMonths||0;
+      const no=genNo('CUS');
+      await put('custody',no,{no,itemId:l.itemId,employee,qty:l.qty,unitCost,returnedQty:0,lostQty:0,date,cycleMonths,dueDate:cycleMonths>0?addMonths(date,cycleMonths):'',notes,ts:Date.now()});
+      await addMovement(l.itemId,-l.qty,'custodyOut',no,employee);
+    }
+    toast(`اتسلّمت العهدة لـ ${employee}`);
+  },body=>{wireWhFilter(body,body.querySelector('form').whId)});
+}
+function openCustody(id){
+  const c=byId('custody',id);if(!c)return;const st=custodyStatus(c),due=custodyDueState(c),rem=custodyRemain(c);
+  openDrawer(`عهدة ${c.no}`,statusbar([['out','مُسلّمة'],['closed','مقفولة']],st==='closed'?'closed':'out')+
+  `<div class="kv"><div><small>الموظف</small><b>${esc(c.employee)}</b></div><div><small>الصنف</small><b>${esc(itemName(c.itemId))}</b></div><div><small>الكمية</small><b>${num(c.qty,2)} ${esc(itemUnit(c.itemId))}</b></div><div><small>المتبقي عنده</small><b>${num(rem,2)} ${esc(itemUnit(c.itemId))}</b></div><div><small>قيمة الوحدة عند التسليم</small><b>${money(c.unitCost)}</b></div><div><small>القيمة الحالية</small><b>${money(c.unitCost*rem)}</b></div><div><small>تاريخ التسليم</small><b>${c.date}</b></div>${c.dueDate?`<div><small>تاريخ التجديد (كل ${c.cycleMonths} شهر)</small><b>${due?chip(c.dueDate,due):c.dueDate}</b></div>`:''}${c.returnedQty?`<div><small>اترجع سليم</small><b>${num(c.returnedQty,2)}</b></div>`:''}${c.lostQty?`<div><small>فقد/تلف</small><b>${num(c.lostQty,2)}</b></div>`:''}</div>
+  ${c.notes?`<div class="note"><span>${esc(c.notes)}</span></div>`:''}
+  ${histHtml(c)}
+  ${st==='active'?`<div class="actions"><span></span><button class="btn pri" data-a="custodySettle" data-id="${c.id}">تسوية العهدة</button></div>`:''}`);
+}
+function custodySettleForm(id){
+  const c=byId('custody',id);if(!c)return;const rem=custodyRemain(c);if(rem<=0){toast('العهدة دي مقفولة خلاص','bad');return}
+  openDrawer(`تسوية عهدة ${c.no}`,`<form class="main"><div class="fg">
+    <label class="f full"><span>الصنف</span><b>${esc(itemName(c.itemId))} · المتبقي عند ${esc(c.employee)}: ${num(rem,2)} ${esc(itemUnit(c.itemId))}</b></label>
+    ${fld('الكمية','qty',{type:'number',value:rem,attrs:`step="any" min="0" max="${rem}"`,req:true})}
+    ${sel('الحالة','st',[['good','سليمة: ترجع المخزون'],['damaged','تالفة: مترجعش المخزون'],['lost','مفقودة']],'good')}
+    ${fld('التاريخ','date',{type:'date',value:today(),req:true})}
+  </div>
+  <div class="fg">${area('ملاحظات','notes',c.notes||'')}</div>
+  ${formActions('سجّل التسوية')}</form>`,
+  async fd=>{
+    const q=Math.min(rem,Math.max(0,+fd.get('qty')||0));if(q<=0){toast('اكتب كمية أكبر من صفر','bad');return false}
+    const st=fd.get('st');
+    const patchData=st==='good'?{returnedQty:(+c.returnedQty||0)+q}:{lostQty:(+c.lostQty||0)+q};
+    await patch('custody',id,Object.assign({},patchData,{notes:fd.get('notes')}),st==='good'?`رجعت ${num(q,2)} سليمة`:st==='damaged'?`اتلفت ${num(q,2)}`:`فُقدت ${num(q,2)}`);
+    if(st==='good')await addMovement(c.itemId,q,'custodyRet',c.no,c.employee);
+    toast('اتسجلت التسوية');closeDrawer();
+  });
+}
+
 /* ---------- QA ---------- */
 function renderQa(){
   const pend=S.inspections.filter(i=>i.status==='pending').sort((a,b)=>(a.ts||0)-(b.ts||0));
@@ -1709,11 +1784,12 @@ function itemForm(id){
     ${fld('حد إعادة الطلب','reorder',{type:'number',value:i.reorder,attrs:'step="any" min="0"'})}
     ${fld('مخزون الأمان','safety',{type:'number',value:i.safety,attrs:'step="any" min="0"'})}
     ${fld('مدة الصلاحية (يوم)','shelfLifeDays',{type:'number',value:i.shelfLifeDays,attrs:'step="1" min="0"',hint:'للخامات القابلة للتلف بس، سيبها فاضية لو مش منطبقة'})}
+    ${fld('دورة الاستبدال (شهور)','cycleMonths',{type:'number',value:i.cycleMonths,attrs:'step="1" min="0"',hint:'لأصناف العهدة اللي بتتستهلك وتتجدد دوريًا زي اليونيفورم (كل كام شهر). سيبها فاضية لو الصنف مش بيتجدد دوريًا'})}
     ${sel('المورد المفضل','prefSupplier',[['','بدون'],...S.suppliers.map(s=>[s.id,s.name])],i.prefSupplier,{full:true})}
   </div><datalist id="units"><option value="كجم"><option value="طن"><option value="قطعة"><option value="متر"><option value="لتر"><option value="لفة"><option value="كرتونة"></datalist>
   <datalist id="whs">${S.warehouses.filter(w=>w.active!=='no').sort((a,b)=>String(a.code).localeCompare(String(b.code))).map(w=>`<option value="${esc(w.code)}">${esc(w.name)}</option>`).join('')}</datalist>
   ${formActions(id?'احفظ':'أضف الصنف',id?`<button type="button" class="btn danger w" data-a="del" data-col="items" data-id="${id}">احذف</button>`:'')}</form>${id?histHtml(i):''}`,
-  async fd=>{const d=Object.fromEntries(fd);['cost','reorder','safety','shelfLifeDays'].forEach(k=>d[k]=+d[k]||0);d.grp=grp2(d.grp);d.sku=String(d.sku||'').trim().toUpperCase();if(codeTaken('items','sku',d.sku,id)){toast(`الكود ${d.sku} مستخدم لصنف تاني`,'bad');return false}
+  async fd=>{const d=Object.fromEntries(fd);['cost','reorder','safety','shelfLifeDays','cycleMonths'].forEach(k=>d[k]=+d[k]||0);d.grp=grp2(d.grp);d.sku=String(d.sku||'').trim().toUpperCase();if(codeTaken('items','sku',d.sku,id)){toast(`الكود ${d.sku} مستخدم لصنف تاني`,'bad');return false}
     if(id){await put('items',id,Object.assign({},strip(i),d,{onHand:i.onHand}))}
     else{const nid=genNo('IT');d.onHand=+d.onHand||0;await put('items',nid,d);if(d.onHand)await put('movements',genNo('MV'),{itemId:nid,qty:d.onHand,type:'open',ref:'',note:'رصيد افتتاحي',date:today(),ts:Date.now()})}
     toast(id?'اتحفظ الصنف':'اتضاف الصنف')},
@@ -2281,8 +2357,8 @@ function buildWorkbook(X,D){
 }
 
 /* ---------- activity log ---------- */
-const OPENER={pos:'openPo',rfqs:'openRfq',grns:'openGrn',issues:'openIssue',rreturns:'openRret',ireturns:'openIret',suppliers:'editSupplier',items:'editItem',warehouses:'editWh',depts:'editDept'};
-const COL_T={suppliers:'مورد',items:'صنف',warehouses:'مخزن',depts:'قسم',rfqs:'طلب عرض سعر',pos:'أمر شراء',grns:'إذن استلام',issues:'إذن صرف',rreturns:'مرتجع لمورد',ireturns:'مرتجع صرف',shipments:'شحنة',inspections:'فحص جودة',roles:'صلاحية',movements:'مخزون',counts:'جرد'};
+const OPENER={pos:'openPo',rfqs:'openRfq',grns:'openGrn',issues:'openIssue',rreturns:'openRret',ireturns:'openIret',suppliers:'editSupplier',items:'editItem',warehouses:'editWh',depts:'editDept',custody:'openCustody'};
+const COL_T={suppliers:'مورد',items:'صنف',warehouses:'مخزن',depts:'قسم',rfqs:'طلب عرض سعر',pos:'أمر شراء',grns:'إذن استلام',issues:'إذن صرف',rreturns:'مرتجع لمورد',ireturns:'مرتجع صرف',shipments:'شحنة',inspections:'فحص جودة',roles:'صلاحية',movements:'مخزون',counts:'جرد',custody:'عهدة'};
 function activityEntries(){
   const out=[];
   HIST.forEach(col=>S[col].forEach(d=>{const ref=col==='roles'?'':(d.no||d.name||d.id);const h=d.hist||[];h.forEach(x=>out.push({t:x.t,u:x.u,a:x.a,col,id:d.id,ref}));if(!h.length&&d.createdAt)out.push({t:d.createdAt,u:d.createdBy,a:'إنشاء',col,id:d.id,ref})}));
@@ -2515,6 +2591,7 @@ const ACT={
   issueNew:d=>issueForm(d.id),issueBranch:d=>issueForm(d.id,'branch'),openIssue:d=>openIssue(d.id),editSale:d=>saleForm(d.branch,d.month),
   iretNew:d=>ireturnForm(d.id),openIret:d=>openIret(d.id),
   rretNew:d=>rreturnForm(d.id),openRret:d=>openRret(d.id),
+  custodyNew:()=>custodyForm(),openCustody:d=>openCustody(d.id),custodySettle:d=>custodySettleForm(d.id),
   addShip:()=>shipForm(),editShip:d=>shipForm(d.id),shipNext:d=>run(async()=>{await shipNext(d.id);if(!$('#drawer').hidden)openShip(d.id)}),
   addLine:()=>{const w=$('#lines');w.insertAdjacentHTML('beforeend',lineRow({},{np:w.dataset.np==='1'}));if(w.closest('form.ship'))w.lastElementChild.querySelector('[name=li_price]').required=false},
   rmLine:(d,b)=>{const w=b.closest('.lines');if(w.children.length>1||w.dataset.optional==='1')b.closest('.line').remove()},
@@ -2530,7 +2607,7 @@ function arm(b,fn){if(b.dataset.armed){delete b.dataset.armed;fn();return}const 
 // action -> module it belongs to; ':view' opens a record (read allowed if the module is visible)
 const ACT_MOD={addSupplier:'suppliers',editSupplier:'suppliers:view',autoCodeSup:'suppliers',xlImportSup:'suppliers',xlImportItems:'inv',addWh:'wh',editWh:'wh:view',seedWh:'wh',addDept:'dept',editDept:'dept:view',seedDept:'dept',addItem:'inv',editItem:'inv:view',move:'inv',addRfq:'rfqs',rfqFromItem:'rfqs',openRfq:'rfqs:view',award:'rfqs',setFx:'rfqs',delQuote:'rfqs',cancelRfq:'rfqs',paste:'rfqs',invite:'rfqs',copyInvite:'rfqs',
   addPo:'pos',openPo:'pos:view',editPo:'pos',sendPo:'pos',cancelPo:'pos',approvePo:'approve',rejectPo:'approve',receive:'grn',grnNew:'grn',openGrn:'grn:view',inspect:'qa',issueNew:'issue',issueBranch:'issue',openIssue:'issue:view',editSale:'sales:view',
-  iretNew:'iret',openIret:'iret:view',rretNew:'rret',openRret:'rret:view',addShip:'ship',editShip:'ship',shipNext:'ship',openShip:'ship:view',settings:'admin',clearSample:'admin',wipeDemo:'admin',toggleMaintenance:'admin',setRole:'admin',delRole:'admin',addRole:'admin',dismissReq:'admin',approveDevice:'admin',exportXlsx:'reports',copyReport:'reports:view',openLedger:'inv:view',exportLedger:'reports',addCount:'count',openCount:'count:view',saveCount:'count',postCount:'count',cancelCount:'count',exportCountXlsx:'count:view',applyRevalPct:'reval',postReval:'reval',openReval:'reval:view',exportRevalXlsx:'reval:view',openBill:'bills:view',paySupplier:'payments',advancePayment:'payments',openPayment:'payments:view',openSupplierLedger:'bills:view',openingBalance:'bills',exportOpeningXlsx:'bills'};
+  iretNew:'iret',openIret:'iret:view',rretNew:'rret',openRret:'rret:view',custodyNew:'custody',openCustody:'custody:view',custodySettle:'custody',addShip:'ship',editShip:'ship',shipNext:'ship',openShip:'ship:view',settings:'admin',clearSample:'admin',wipeDemo:'admin',toggleMaintenance:'admin',setRole:'admin',delRole:'admin',addRole:'admin',dismissReq:'admin',approveDevice:'admin',exportXlsx:'reports',copyReport:'reports:view',openLedger:'inv:view',exportLedger:'reports',addCount:'count',openCount:'count:view',saveCount:'count',postCount:'count',cancelCount:'count',exportCountXlsx:'count:view',applyRevalPct:'reval',postReval:'reval',openReval:'reval:view',exportRevalXlsx:'reval:view',openBill:'bills:view',paySupplier:'payments',advancePayment:'payments',openPayment:'payments:view',openSupplierLedger:'bills:view',openingBalance:'bills',exportOpeningXlsx:'bills'};
 const COL_MOD={suppliers:'suppliers',items:'inv',pos:'pos',shipments:'ship',warehouses:'wh',depts:'dept'};
 const actAllowed=(name,d)=>{let spec=name==='del'?COL_MOD[d.col]:ACT_MOD[name];if(!spec)return true;const[m,v]=spec.split(':');return v==='view'?(canSee(m)||canEditMod(m)):canEditMod(m)};
 document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(!b)return;const name=b.dataset.a,a=ACT[name];if(!a)return;
