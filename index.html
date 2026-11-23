@@ -1527,6 +1527,19 @@ function supplierDue(sid){
   return Math.round((billsDue-returned-advanceLeft(sid))*100)/100;
 }
 function termsDays(terms){const m=String(terms||'').match(/\d+/);return m?+m[0]:0}
+// subtotal is always the raw sum of lines (qty*price); discount/tax are bill-level adjustments on top of
+// it, entered when the supplier's real invoice arrives (which may differ from the receipt). amount (the
+// stored, payable total that supplierDue/payments/status all key off) is always netBeforeTax+taxAmt.
+function billNet(b){
+  const subtotal=Math.round(sum(b.lines||[],l=>l.qty*l.price)*100)/100;
+  const dType=b.discountType||'none',dVal=Math.max(0,+b.discountValue||0);
+  let discountAmt=dType==='pct'?subtotal*Math.min(dVal,100)/100:dType==='amt'?Math.min(dVal,subtotal):0;
+  discountAmt=Math.round(discountAmt*100)/100;
+  const netBeforeTax=Math.round((subtotal-discountAmt)*100)/100;
+  const taxPct=Math.max(0,+b.taxPct||0),taxAmt=Math.round(netBeforeTax*taxPct/100*100)/100;
+  const amount=Math.round((netBeforeTax+taxAmt)*100)/100;
+  return{subtotal,discountAmt,netBeforeTax,taxPct,taxAmt,amount};
+}
 // one bill per GRN: grows as each line on that receipt gets accepted in QA, matching the supplier's actual delivery note/invoice
 async function billForAcceptedInspection(x,acc){
   const billId='BILL-'+(x.grn||x.no),prev=byId('bills',billId);
@@ -1534,9 +1547,9 @@ async function billForAcceptedInspection(x,acc){
   const li=lines.findIndex(l=>l.insId===x.id);
   const line={itemId:x.itemId,qty:acc,price:+x.price||0,insId:x.id};
   if(li>=0)lines[li]=line;else lines.push(line);
-  const amount=Math.round(sum(lines,l=>l.qty*l.price)*100)/100;
   const date=(prev&&prev.date)||x.date||today();
   const dueDate=(prev&&prev.dueDate)||addDays(date,termsDays((byId('suppliers',x.supplierId)||{}).terms));
+  const draft=Object.assign({},prev,{lines}),{amount}=billNet(draft);
   await put('bills',billId,Object.assign({},prev?strip(prev):{},{no:billId,supplierId:x.supplierId,grn:x.grn,poNo:x.poNo||'',date,dueDate,lines,amount,paid:(prev&&prev.paid)||0}),prev?`تحديث الفاتورة: ${itemName(x.itemId)} ×${num(acc,2)}`:'إنشاء فاتورة من الاستلام');
 }
 function renderBills(){
@@ -1647,10 +1660,24 @@ function openingBalanceForm(sid){
 }
 function openBill(id){
   const b=byId('bills',id);if(!b)return;const st=billStatus(b),[l,t]=BILL_ST[st],rem=Math.max(0,(+b.amount||0)-(+b.paid||0));
-  openDrawer(`فاتورة ${b.no}`,`<div class="kv"><div><small>المورد</small><b>${esc(supName(b.supplierId))}</b></div><div><small>التاريخ</small><b>${b.date}</b></div><div><small>تاريخ الاستحقاق</small><b>${b.dueDate||'—'}</b></div><div><small>إذن الاستلام</small><b>${b.grn?code(b.grn):'—'}</b></div><div><small>القيمة</small><b>${money(b.amount)}</b></div><div><small>المسدد</small><b>${money(b.paid||0)}</b></div><div><small>المتبقي</small><b>${money(rem)}</b></div><div><small>الحالة</small><b>${chip(l,t)}</b></div></div>
+  const hasAdj=!b.opening&&(b.lines||[]).length;
+  const net=hasAdj?billNet(b):null;
+  const canAdj=hasAdj&&canEditMod('bills');
+  openDrawer(`فاتورة ${b.no}`,`<div class="kv"><div><small>المورد</small><b>${esc(supName(b.supplierId))}</b></div><div><small>التاريخ</small><b>${b.date}</b></div><div><small>تاريخ الاستحقاق</small><b>${b.dueDate||'—'}</b></div><div><small>إذن الاستلام</small><b>${b.grn?code(b.grn):'—'}</b></div>${net?`<div><small>الإجمالي قبل الخصم</small><b>${money(net.subtotal)}</b></div>${net.discountAmt?`<div><small>الخصم</small><b>${b.discountType==='pct'?`${num(b.discountValue,2)}%`:''} ${money(net.discountAmt)}</b></div>`:''}${net.taxAmt?`<div><small>الضريبة (${num(net.taxPct,2)}%)</small><b>${money(net.taxAmt)}</b></div>`:''}`:''}<div><small>القيمة المستحقة</small><b>${money(b.amount)}</b></div><div><small>المسدد</small><b>${money(b.paid||0)}</b></div><div><small>المتبقي</small><b>${money(rem)}</b></div><div><small>الحالة</small><b>${chip(l,t)}</b></div></div>
   <div class="panel">${tbl(['الصنف',['الكمية','num'],['سعر الوحدة','num'],['القيمة','num']],(b.lines||[]).map(x=>`<tr><td>${esc(itemName(x.itemId))}</td><td class="num">${num(x.qty,2)} ${esc(itemUnit(x.itemId))}</td><td class="num">${money(x.price)}</td><td class="num">${money(x.qty*x.price)}</td></tr>`),'—')}</div>
   ${histHtml(b)}
-  ${rem>0?`<div class="actions"><span></span><button class="btn pri" data-a="paySupplier" data-id="${b.supplierId}">سدّد للمورد</button></div>`:''}`);
+  ${canAdj?`<h3 class="sec w">خصم وضريبة الفاتورة</h3><form id="billAdjForm" class="w"><div class="fg">
+    ${sel('نوع الخصم','discountType',[['none','من غير خصم'],['pct','نسبة %'],['amt','قيمة ثابتة']],b.discountType||'none')}
+    ${fld('قيمة الخصم','discountValue',{type:'number',value:b.discountValue||0,attrs:'step="any" min="0"'})}
+    ${fld('نسبة الضريبة %','taxPct',{type:'number',value:b.taxPct||0,attrs:'step="any" min="0" max="100"',hint:'الضريبة المصرية المعتادة 14%، سيبها صفر لو الفاتورة من غير ضريبة'})}
+  </div><div class="actions"><span></span><button class="btn pri" type="submit">احفظ الخصم والضريبة</button></div></form>`:''}
+  ${rem>0?`<div class="actions"><span></span><button class="btn pri" data-a="paySupplier" data-id="${b.supplierId}">سدّد للمورد</button></div>`:''}`,
+  null,body=>{const f=body.querySelector('#billAdjForm');if(f)bindForm(f,async fd=>{
+    const discountType=fd.get('discountType'),discountValue=Math.max(0,+fd.get('discountValue')||0),taxPct=Math.max(0,Math.min(100,+fd.get('taxPct')||0));
+    const draft=Object.assign({},b,{discountType,discountValue,taxPct}),{amount}=billNet(draft);
+    await patch('bills',id,{discountType,discountValue,taxPct,amount},`تحديث الخصم/الضريبة: صافي ${money(amount)}`);
+    toast('اتحفظ الخصم والضريبة');openBill(id);
+  })});
 }
 function renderPayments(){
   const list=[...S.payments].filter(p=>match(p.no,supName(p.supplierId),p.ref)).sort((a,b)=>(b.ts||0)-(a.ts||0));
